@@ -1,9 +1,13 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'package:path_provider/path_provider.dart';
 
 /// 平台工具类
 class PlatformUtils {
   PlatformUtils._();
+
+  /// CPU 核心数
+  static int get processorCount => Platform.numberOfProcessors;
 
   /// 是否为移动端
   static bool get isMobile => Platform.isIOS || Platform.isAndroid;

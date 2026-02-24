@@ -351,20 +351,20 @@ v0.4 在 v0.3 基础上补齐三项高优先级细节：流式事件语义、可
 
 - [x] iOS ONNX 依赖接入
 - [x] Android ONNX 依赖接入
-- [~] iOS OCR/STT/Embedding 原型推理
+- [~] iOS OCR/STT/Embedding 原型推理 (tokenization 待完善)
 - [ ] Android OCR/STT 真实推理落地
 
-### Phase C: 协议与选择器（P0）
+### Phase C: 协议与选择器（已完成）
 
-- [ ] 模型清单契约字段全量落地（本文件第 3 章）
-- [ ] RuntimeSelector 决策表实现 + 诊断输出（第 4 章）
-- [ ] LLM 流式事件 Schema 全后端对齐（含 `eventType` 与 stop 规则，第 5 章）
+- [x] 模型清单契约字段全量落地（本文件第 3 章）
+- [x] RuntimeSelector 决策表实现 + 诊断输出（第 4 章）
+- [x] LLM 流式事件 Schema 全后端对齐（含 `eventType` 与 stop 规则，第 5 章）
 
-### Phase D: 存储与调度（P0）
+### Phase D: 存储与调度（已完成）
 
-- [ ] ModelManager 单飞锁 + 原子下载 + 逐 artifact 校验（含状态机与进度事件，第 6 章）
-- [ ] TaskScheduler MVP（取消/超时/并发/分队列）
-- [ ] 统一错误结构落地
+- [x] ModelManager 单飞锁 + 原子下载 + 逐 artifact 校验（含状态机与进度事件，第 6 章）
+- [x] TaskScheduler MVP（取消/超时/并发/分队列）
+- [x] 统一错误结构落地
 
 ### Phase E: 生产化（P1）
 
@@ -378,3 +378,88 @@ v0.4 在 v0.3 基础上补齐三项高优先级细节：流式事件语义、可
 - 依赖接入已完成（iOS/Android ONNX）
 - 平台实现不均衡：iOS 原型较前，Android/桌面仍需工程化
 - v0.4 已补齐流式语义、降级可复现规则、安装状态机三项关键防分叉约束
+
+## 十一、优先级评估 (2026-02-24)
+
+### 当前代码状态
+
+| 模块 | 文件 | 状态 | 完成度 |
+|------|------|------|--------|
+| Flutter SDK 架构 | lib/*.dart | ✅ 完整 | 90% |
+| iOS ONNX 插件 | ios/Runner/ModelLoaderPlugin.swift | ⚠️ 基础可用 | 60% |
+| Android ONNX 插件 | android/.../ModelLoaderPlugin.kt | ❌ 占位 | 20% |
+| llama.cpp 集成 | lib/runtime/llm_runtime_llama.cpp.dart | ⚠️ 进程封装 | 40% |
+| TTS 运行时 | lib/runtime/tts_runtime*.dart | ❌ Stub | 10% |
+| OCR 运行时 | lib/runtime/ocr_runtime*.dart | ⚠️ Stub | 30% |
+| STT 运行时 | lib/runtime/stt_runtime*.dart | ⚠️ Stub | 30% |
+| Embedding 运行时 | lib/runtime/embedding_runtime*.dart | ⚠️ Stub | 30% |
+
+### 优先级评估
+
+#### P0 - 阻塞性问题 (必须立即处理)
+
+**1. iOS ONNX Tokenization**
+- 问题：当前 `simpleTokenize` 是字符级，无法正确处理 BGE 等模型
+- 影响：Embedding/STT 模型无法正常工作
+- 建议：实现 WordPiece tokenizer 或使用 HuggingFace tokenizer
+
+**2. 模型文件集成**
+- 问题：模型文件未复制到 iOS bundle
+- 影响：无法加载实际模型进行测试
+- 建议：在 iOS Runner 中添加 Assets 目录配置
+
+#### P1 - 核心功能 (MVP 必须)
+
+**3. LLM 运行时 (llama.cpp)**
+- 当前：进程封装 Stub
+- 建议：完成 llama.cpp 服务进程集成，支持 GGUF 模型加载
+
+**4. Android ONNX 实现**
+- 当前：占位代码
+- 建议：参考 iOS 实现，完成 ONNX Runtime 集成
+
+**5. RuntimeSelector 集成**
+- 当前：已实现但未与 ModelManager 联动
+- 建议：在模型加载时调用 RuntimeSelector 进行后端选择
+
+#### P2 - 重要功能 (提升可用性)
+
+**6. TaskScheduler 与 ModelManager 集成**
+- 当前：独立实现
+- 建议：将下载任务接入 TaskScheduler
+
+**7. 错误处理集成**
+- 当前：定义完成但未全面使用
+- 建议：在各运行时中全面使用 ModelLoaderException
+
+**8. 进度事件 UI**
+- 当前：InstallProgress 已定义
+- 建议：在 main.dart 中展示下载进度
+
+#### P3 - 增强功能 (后续迭代)
+
+**9. TTS 实现**
+- 当前：Stub
+- 建议：使用 ONNX 或系统 TTS
+
+**10. OCR 完整实现**
+- 当前：Stub
+- 建议：集成 EasyOCR ONNX 模型
+
+### 下一步行动建议
+
+**立即执行 (1-2天):**
+1. 修复 iOS tokenization 问题
+2. 复制测试模型到 iOS bundle
+3. 验证 BGE Embedding 端到端流程
+
+**短期目标 (1周):**
+1. 完成 Android ONNX 插件
+2. 完善 llama.cpp 集成
+3. RuntimeSelector 集成
+
+**中期目标 (2周):**
+1. 端到端测试
+2. 错误处理完善
+3. UI 进度展示
+

@@ -72,6 +72,7 @@ class ChatMessage {
 }
 
 /// LLM 生成配置
+/// Reference: CLAUDE.md Section 5
 class GenerationConfig {
   /// 温度 (0.0 - 2.0)
   final double? temperature;
@@ -94,6 +95,15 @@ class GenerationConfig {
   /// 重复惩罚
   final double? repeatPenalty;
 
+  /// 随机种子 (Section 5.1)
+  final int? seed;
+
+  /// Batch size (Section 5.1)
+  final int? batchSize;
+
+  /// Threads (Section 5.1)
+  final int? threads;
+
   const GenerationConfig({
     this.temperature,
     this.topP,
@@ -102,6 +112,9 @@ class GenerationConfig {
     this.stream,
     this.topK,
     this.repeatPenalty,
+    this.seed,
+    this.batchSize,
+    this.threads,
   });
 
   Map<String, dynamic> toJson() {
@@ -113,10 +126,13 @@ class GenerationConfig {
       if (stream != null) 'stream': stream,
       if (topK != null) 'top_k': topK,
       if (repeatPenalty != null) 'repeat_penalty': repeatPenalty,
+      if (seed != null) 'seed': seed,
+      if (batchSize != null) 'batch_size': batchSize,
+      if (threads != null) 'threads': threads,
     };
   }
 
-  /// 默认配置
+  /// Default configuration
   static const GenerationConfig defaultConfig = GenerationConfig(
     temperature: 0.7,
     topP: 0.9,
@@ -264,4 +280,401 @@ abstract class LLMRuntime {
 
   /// 是否已加载
   bool get isLoaded;
+}
+
+// ============================================================
+// LLM Streaming Events (Section 5)
+// ============================================================
+
+/// Event types for streaming (Section 5.2)
+enum LLMEventType {
+  /// Incremental text delta
+  delta,
+
+  /// Metrics update
+  metrics,
+
+  /// Generation finished
+  finish,
+
+  /// Error occurred
+  error,
+}
+
+extension LLMEventTypeExtension on LLMEventType {
+  String get name {
+    switch (this) {
+      case LLMEventType.delta:
+        return 'delta';
+      case LLMEventType.metrics:
+        return 'metrics';
+      case LLMEventType.finish:
+        return 'finish';
+      case LLMEventType.error:
+        return 'error';
+    }
+  }
+
+  static LLMEventType fromString(String value) {
+    switch (value) {
+      case 'delta':
+        return LLMEventType.delta;
+      case 'metrics':
+        return LLMEventType.metrics;
+      case 'finish':
+        return LLMEventType.finish;
+      case 'error':
+        return LLMEventType.error;
+      default:
+        return LLMEventType.delta;
+    }
+  }
+}
+
+/// Finish reasons (Section 5.2)
+enum FinishReason {
+  /// End of sequence
+  eos,
+
+  /// Max length reached
+  length,
+
+  /// Stop string matched
+  stop,
+
+  /// Cancelled
+  cancel,
+
+  /// Error
+  error,
+}
+
+extension FinishReasonExtension on FinishReason {
+  String get name {
+    switch (this) {
+      case FinishReason.eos:
+        return 'eos';
+      case FinishReason.length:
+        return 'length';
+      case FinishReason.stop:
+        return 'stop';
+      case FinishReason.cancel:
+        return 'cancel';
+      case FinishReason.error:
+        return 'error';
+    }
+  }
+
+  static FinishReason fromString(String value) {
+    switch (value) {
+      case 'eos':
+        return FinishReason.eos;
+      case 'length':
+        return FinishReason.length;
+      case 'stop':
+        return FinishReason.stop;
+      case 'cancel':
+        return FinishReason.cancel;
+      case 'error':
+        return FinishReason.error;
+      default:
+        return FinishReason.eos;
+    }
+  }
+}
+
+/// Generation stats (Section 5.2, 5.4)
+class GenerationStats {
+  /// Number of prompt tokens
+  final int promptTokens;
+
+  /// Number of completion tokens
+  final int completionTokens;
+
+  /// Time to first token in ms
+  final int? timeToFirstTokenMs;
+
+  /// Average ms per token
+  final double? msPerToken;
+
+  const GenerationStats({
+    required this.promptTokens,
+    required this.completionTokens,
+    this.timeToFirstTokenMs,
+    this.msPerToken,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'promptTokens': promptTokens,
+      'completionTokens': completionTokens,
+      if (timeToFirstTokenMs != null) 'timeToFirstTokenMs': timeToFirstTokenMs,
+      if (msPerToken != null) 'msPerToken': msPerToken,
+    };
+  }
+
+  factory GenerationStats.fromJson(Map<String, dynamic> json) {
+    return GenerationStats(
+      promptTokens: json['promptTokens'] ?? 0,
+      completionTokens: json['completionTokens'] ?? 0,
+      timeToFirstTokenMs: json['timeToFirstTokenMs'],
+      msPerToken: json['msPerToken']?.toDouble(),
+    );
+  }
+}
+
+/// Error info for streaming events
+class LLMErrorInfo {
+  /// Error code
+  final String code;
+
+  /// Error message
+  final String message;
+
+  /// Whether error is retriable
+  final bool retriable;
+
+  const LLMErrorInfo({
+    required this.code,
+    required this.message,
+    this.retriable = false,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'code': code,
+      'message': message,
+      'retriable': retriable,
+    };
+  }
+
+  factory LLMErrorInfo.fromJson(Map<String, dynamic> json) {
+    return LLMErrorInfo(
+      code: json['code'] ?? '',
+      message: json['message'] ?? '',
+      retriable: json['retriable'] ?? false,
+    );
+  }
+}
+
+/// Streaming event (matches CLAUDE.md Section 5.2)
+class LLMStreamEvent {
+  /// Event type
+  final LLMEventType eventType;
+
+  /// Request ID (stable throughout request)
+  final String requestId;
+
+  /// Sequence number (strictly increasing)
+  final int sequence;
+
+  /// Delta text (for delta events)
+  final String? deltaText;
+
+  /// Token IDs (for delta events)
+  final List<int>? tokenIds;
+
+  /// Generation stats (for metrics/finish events)
+  final GenerationStats? stats;
+
+  /// Finish reason (for finish events)
+  final FinishReason? finishReason;
+
+  /// Error info (for error events)
+  final LLMErrorInfo? error;
+
+  const LLMStreamEvent({
+    required this.eventType,
+    required this.requestId,
+    required this.sequence,
+    this.deltaText,
+    this.tokenIds,
+    this.stats,
+    this.finishReason,
+    this.error,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'eventType': eventType.name,
+      'requestId': requestId,
+      'sequence': sequence,
+      if (deltaText != null) 'deltaText': deltaText,
+      if (tokenIds != null) 'tokenIds': tokenIds,
+      if (stats != null) 'stats': stats!.toJson(),
+      if (finishReason != null) 'finishReason': finishReason!.name,
+      if (error != null) 'error': error!.toJson(),
+    };
+  }
+
+  factory LLMStreamEvent.fromJson(Map<String, dynamic> json) {
+    return LLMStreamEvent(
+      eventType: LLMEventTypeExtension.fromString(json['eventType'] ?? 'delta'),
+      requestId: json['requestId'] ?? '',
+      sequence: json['sequence'] ?? 0,
+      deltaText: json['deltaText'],
+      tokenIds: json['tokenIds'] != null
+          ? List<int>.from(json['tokenIds'])
+          : null,
+      stats: json['stats'] != null
+          ? GenerationStats.fromJson(json['stats'])
+          : null,
+      finishReason: json['finishReason'] != null
+          ? FinishReasonExtension.fromString(json['finishReason'])
+          : null,
+      error: json['error'] != null
+          ? LLMErrorInfo.fromJson(json['error'])
+          : null,
+    );
+  }
+
+  /// Create delta event
+  factory LLMStreamEvent.delta({
+    required String requestId,
+    required int sequence,
+    required String deltaText,
+    List<int>? tokenIds,
+  }) {
+    return LLMStreamEvent(
+      eventType: LLMEventType.delta,
+      requestId: requestId,
+      sequence: sequence,
+      deltaText: deltaText,
+      tokenIds: tokenIds,
+    );
+  }
+
+  /// Create metrics event
+  factory LLMStreamEvent.metrics({
+    required String requestId,
+    required int sequence,
+    required GenerationStats stats,
+  }) {
+    return LLMStreamEvent(
+      eventType: LLMEventType.metrics,
+      requestId: requestId,
+      sequence: sequence,
+      stats: stats,
+    );
+  }
+
+  /// Create finish event
+  factory LLMStreamEvent.finish({
+    required String requestId,
+    required int sequence,
+    required FinishReason finishReason,
+    required GenerationStats stats,
+  }) {
+    return LLMStreamEvent(
+      eventType: LLMEventType.finish,
+      requestId: requestId,
+      sequence: sequence,
+      finishReason: finishReason,
+      stats: stats,
+    );
+  }
+
+  /// Create error event
+  factory LLMStreamEvent.error({
+    required String requestId,
+    required int sequence,
+    required LLMErrorInfo error,
+  }) {
+    return LLMStreamEvent(
+      eventType: LLMEventType.error,
+      requestId: requestId,
+      sequence: sequence,
+      error: error,
+      finishReason: FinishReason.error,
+    );
+  }
+}
+
+/// Non-streaming result (matches CLAUDE.md Section 5.4)
+class LLMResult {
+  /// Complete generated text
+  final String text;
+
+  /// Finish reason
+  final FinishReason finishReason;
+
+  /// Generation stats
+  final GenerationStats stats;
+
+  const LLMResult({
+    required this.text,
+    required this.finishReason,
+    required this.stats,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'text': text,
+      'finishReason': finishReason.name,
+      'stats': stats.toJson(),
+    };
+  }
+
+  factory LLMResult.fromJson(Map<String, dynamic> json) {
+    return LLMResult(
+      text: json['text'] ?? '',
+      finishReason: FinishReasonExtension.fromString(json['finishReason'] ?? 'stop'),
+      stats: GenerationStats.fromJson(json['stats'] ?? {}),
+    );
+  }
+}
+
+/// Stop strings matcher (Section 5.3)
+/// Handles cross-chunk matching
+class StopStringsMatcher {
+  final List<String> stopStrings;
+  final StringBuffer _buffer = StringBuffer();
+
+  StopStringsMatcher(this.stopStrings);
+
+  /// Add text chunk and check for stop strings
+  /// Returns: (matched, processedText, remainingBuffer)
+  (bool, String, String) addChunk(String chunk) {
+    _buffer.write(chunk);
+    final text = _buffer.toString();
+
+    // Check each stop string
+    for (final stop in stopStrings) {
+      final index = text.indexOf(stop);
+      if (index != -1) {
+        // Found stop string
+        final matchedText = text.substring(0, index);
+        _buffer.clear();
+        return (true, matchedText, '');
+      }
+    }
+
+    // No match, return all but last characters to allow cross-chunk matching
+    // Keep last N-1 characters for potential match in next chunk
+    int keepBack = 0;
+    for (final stop in stopStrings) {
+      if (stop.length > keepBack) {
+        keepBack = stop.length - 1;
+      }
+    }
+
+    if (text.length <= keepBack) {
+      return (false, '', text);
+    }
+
+    final processed = text.substring(0, text.length - keepBack);
+    final remaining = text.substring(text.length - keepBack);
+    _buffer.clear();
+    _buffer.write(remaining);
+
+    return (false, processed, remaining);
+  }
+
+  /// Get remaining buffer content
+  String get remaining => _buffer.toString();
+
+  /// Clear buffer
+  void reset() {
+    _buffer.clear();
+  }
 }

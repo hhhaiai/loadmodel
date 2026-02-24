@@ -61,7 +61,147 @@ class DownloadProgress {
   }
 }
 
-/// 下载状态
+/// Install phase (matches CLAUDE.md Section 6.5)
+enum InstallPhase {
+  /// Initial state
+  idle,
+
+  /// Downloading model files
+  downloading,
+
+  /// Verifying file integrity
+  verifying,
+
+  /// Extracting archive (if applicable)
+  extracting,
+
+  /// Ready to use
+  ready,
+
+  /// Installation failed
+  failed,
+
+  /// Installation cancelled
+  cancelled,
+}
+
+extension InstallPhaseExtension on InstallPhase {
+  String get name {
+    switch (this) {
+      case InstallPhase.idle:
+        return 'idle';
+      case InstallPhase.downloading:
+        return 'downloading';
+      case InstallPhase.verifying:
+        return 'verifying';
+      case InstallPhase.extracting:
+        return 'extracting';
+      case InstallPhase.ready:
+        return 'ready';
+      case InstallPhase.failed:
+        return 'failed';
+      case InstallPhase.cancelled:
+        return 'cancelled';
+    }
+  }
+
+  bool get isTerminal {
+    return this == InstallPhase.ready ||
+        this == InstallPhase.failed ||
+        this == InstallPhase.cancelled;
+  }
+}
+
+/// Install progress event (matches CLAUDE.md Section 6.5)
+class InstallProgress {
+  /// Model ID
+  final String modelId;
+
+  /// Model version
+  final String version;
+
+  /// Current phase
+  final InstallPhase phase;
+
+  /// Bytes received (for downloading phase)
+  final int receivedBytes;
+
+  /// Total bytes
+  final int totalBytes;
+
+  /// Progress ratio (0.0 - 1.0)
+  final double progress;
+
+  /// Request ID for tracking
+  final String requestId;
+
+  /// Error information (for failed phase)
+  final Map<String, dynamic>? error;
+
+  const InstallProgress({
+    required this.modelId,
+    required this.version,
+    required this.phase,
+    this.receivedBytes = 0,
+    this.totalBytes = 0,
+    this.progress = 0.0,
+    required this.requestId,
+    this.error,
+  });
+
+  factory InstallProgress.fromJson(Map<String, dynamic> json) {
+    return InstallProgress(
+      modelId: json['modelId'] ?? '',
+      version: json['version'] ?? '1.0.0',
+      phase: InstallPhase.values.firstWhere(
+        (e) => e.name == json['phase'],
+        orElse: () => InstallPhase.idle,
+      ),
+      receivedBytes: json['receivedBytes'] ?? 0,
+      totalBytes: json['totalBytes'] ?? 0,
+      progress: (json['progress'] ?? 0.0).toDouble(),
+      requestId: json['requestId'] ?? '',
+      error: json['error'],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'modelId': modelId,
+      'version': version,
+      'phase': phase.name,
+      'receivedBytes': receivedBytes,
+      'totalBytes': totalBytes,
+      'progress': progress,
+      'requestId': requestId,
+      'error': error,
+    };
+  }
+
+  InstallProgress copyWith({
+    String? modelId,
+    String? version,
+    InstallPhase? phase,
+    int? receivedBytes,
+    int? totalBytes,
+    double? progress,
+    String? requestId,
+    Map<String, dynamic>? error,
+  }) {
+    return InstallProgress(
+      modelId: modelId ?? this.modelId,
+      version: version ?? this.version,
+      phase: phase ?? this.phase,
+      receivedBytes: receivedBytes ?? this.receivedBytes,
+      totalBytes: totalBytes ?? this.totalBytes,
+      progress: progress ?? this.progress,
+      requestId: requestId ?? this.requestId,
+      error: error ?? this.error,
+    );
+  }
+}
+
+/// Download status (legacy, kept for compatibility)
 enum DownloadStatus {
   pending,
   downloading,

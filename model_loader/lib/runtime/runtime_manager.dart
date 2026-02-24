@@ -1,5 +1,8 @@
+import 'dart:typed_data';
+
 import '../core/platform_utils.dart';
 import '../utils/logger.dart';
+import '../models/inference_result.dart';
 import 'llm_runtime.dart';
 import 'ocr_runtime.dart';
 import 'tts_runtime.dart';
@@ -175,11 +178,15 @@ class _LLMRuntimeStub implements LLMRuntime {
   @override
   Future<String> complete(String prompt, {GenerationConfig? config}) async => throw UnimplementedError();
   @override
-  Stream<String> completeStream(String prompt, {GenerationConfig? config}) async* => throw UnimplementedError();
+  Stream<String> completeStream(String prompt, {GenerationConfig? config}) async* {
+    yield* Stream.error(UnimplementedError());
+  }
   @override
   Future<String> chat(List<ChatMessage> messages, {GenerationConfig? config}) async => throw UnimplementedError();
   @override
-  Stream<String> chatStream(List<ChatMessage> messages, {GenerationConfig? config}) async* => throw UnimplementedError();
+  Stream<String> chatStream(List<ChatMessage> messages, {GenerationConfig? config}) async* {
+    yield* Stream.error(UnimplementedError());
+  }
 }
 
 class _OCRRuntimeStub implements OCRRuntime {
@@ -222,7 +229,9 @@ class _STTRuntimeStub implements STTRuntime {
   @override
   Future<STTResult> recognizeBytes(Uint8List audioBytes, {STTParams? params}) async => throw UnimplementedError();
   @override
-  Stream<STTResult> recognizeStream(Stream<Uint8List> audioStream, {STTParams? params}) async* => throw UnimplementedError();
+  Stream<STTResult> recognizeStream(Stream<Uint8List> audioStream, {STTParams? params}) async* {
+    yield* Stream.error(UnimplementedError());
+  }
   @override
   Future<List<String>> getSupportedLanguages() async => [];
 }
