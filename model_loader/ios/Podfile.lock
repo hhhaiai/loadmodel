@@ -1,0 +1,23 @@
+PODS:
+  - Flutter (1.0.0)
+  - onnxruntime-c (1.24.2)
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - onnxruntime-c (~> 1.24)
+
+SPEC REPOS:
+  trunk:
+    - onnxruntime-c
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+
+SPEC CHECKSUMS:
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  onnxruntime-c: b58bafbc58707d165404665e46a7467a16e8e0e4
+
+PODFILE CHECKSUM: 9acf38dad05ba7f9a8e3ff79cb6892d9f0159ebf
+
+COCOAPODS: 1.16.2
