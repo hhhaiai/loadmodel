@@ -1,9 +1,9 @@
-# ModelLoader SDK 需求评审与修订版 (v0.3)
+# ModelLoader SDK 需求评审与修订版 (v0.4)
 
 ## 一、评审结论
 
 整体方向合理，且 v0.2 已经具备可交付雏形。  
-v0.3 的目标是把“建议”升级为“可执行契约”，减少后续实现返工。
+v0.4 在 v0.3 基础上补齐三项高优先级细节：流式事件语义、可复现降级策略、安装状态机与进度事件。
 
 ## 二、范围与目标（保持不变）
 
@@ -125,6 +125,48 @@ v0.3 的目标是把“建议”升级为“可执行契约”，减少后续实
    - 更低 threads / gpuLayers
 5. 仍不可运行则返回 `RUNTIME_NOT_AVAILABLE`，并附诊断详情
 
+### 4.1 降级候选生成规则（可复现）
+
+- `quantization` 降级候选必须来自清单显式定义（例如 `variants` 或显式候选列表），禁止运行时字符串猜测
+- `contextLength` 仅允许固定阶梯降级：`8192 -> 4096 -> 2048`
+- `threads` 取值范围：`[1, cpuCores]`，默认 `max(1, cpuCores - 1)`
+- `gpuLayers` 取值范围：`[0, model.maxGpuLayers]`，资源不足时优先降到 `0`
+- 当某一步没有候选时，直接进入下一降级维度，不允许重复尝试同一候选
+
+### 4.2 诊断输出结构（SelectionReport）
+
+```json
+{
+  "requestId": "sel_123",
+  "candidates": [
+    {
+      "backend": "llama.cpp",
+      "provider": "gpu",
+      "accepted": false,
+      "reasons": ["INSUFFICIENT_MEMORY"]
+    },
+    {
+      "backend": "llama.cpp",
+      "provider": "cpu",
+      "accepted": true,
+      "reasons": []
+    }
+  ],
+  "downgradeSteps": [
+    {"dimension": "quantization", "from": "Q5_K_M", "to": "Q4_K_M"},
+    {"dimension": "contextLength", "from": 8192, "to": 4096}
+  ],
+  "finalDecision": {
+    "backend": "llama.cpp",
+    "provider": "cpu",
+    "quantization": "Q4_K_M",
+    "contextLength": 4096,
+    "threads": 6,
+    "gpuLayers": 0
+  }
+}
+```
+
 ## 五、LLM 协议（统一输出）
 
 ### 5.1 请求配置（基于现有命名）
@@ -142,6 +184,9 @@ v0.3 的目标是把“建议”升级为“可执行契约”，减少后续实
 
 ```json
 {
+  "eventType": "delta",
+  "requestId": "req_123",
+  "sequence": 1,
   "deltaText": "增量文本",
   "tokenIds": [123, 456],
   "stats": {
@@ -161,11 +206,20 @@ v0.3 的目标是把“建议”升级为“可执行契约”，减少后续实
 
 约束：
 
-- `deltaText` 可为空串，但字段必须存在
+- `eventType` 仅允许：`delta`/`metrics`/`finish`/`error`
+- `delta` 事件必须包含 `deltaText`（可为空串）
+- `finish` 事件必须包含 `finishReason` 与最终 `stats`
+- `error` 事件必须包含 `error`，且 `finishReason` 固定为 `error`
 - `finishReason` 仅允许：`eos`/`length`/`stop`/`cancel`/`error`
-- `error` 仅在失败事件或终止事件中出现
+- `requestId` 在同一请求生命周期内必须稳定，`sequence` 必须严格递增
 
-### 5.3 非流式输出 Schema
+### 5.3 stopStrings 匹配规则（固定）
+
+- 必须支持跨 chunk 匹配（不能只在单个 chunk 内判断）
+- 默认不输出 stop 片段；若输出则必须由明确配置开关控制
+- 命中 stop 后，最后一个事件必须为 `finish`，且 `finishReason=stop`
+
+### 5.4 非流式输出 Schema
 
 ```json
 {
@@ -206,6 +260,35 @@ v0.3 的目标是把“建议”升级为“可执行契约”，减少后续实
 - 路径规范：`{cacheDir}/{modelId}/{version}/...`
 - 不覆盖历史版本，支持激活版本切换与回滚
 - 空间阈值触发 LRU，保留最近使用版本
+
+### 6.5 安装状态机与进度事件（统一）
+
+状态机：
+
+- `idle -> downloading -> verifying -> extracting -> ready`
+- 失败进入 `failed`
+- 取消进入 `cancelled`
+
+进度事件 Schema：
+
+```json
+{
+  "modelId": "llama3.1-8b-q4km",
+  "version": "1.0.0",
+  "phase": "downloading",
+  "receivedBytes": 1048576,
+  "totalBytes": 4870000000,
+  "progress": 0.0002,
+  "requestId": "install_123",
+  "error": null
+}
+```
+
+约束：
+
+- 每个 phase 切换必须发出至少一个事件
+- `failed/cancelled/ready` 必须作为终态事件输出
+- `failed` 事件中的 `error` 结构复用第 8 章定义
 
 ## 七、TaskScheduler MVP 契约（先定接口）
 
@@ -256,7 +339,7 @@ v0.3 的目标是把“建议”升级为“可执行契约”，减少后续实
 }
 ```
 
-## 九、开发计划（v0.3）
+## 九、开发计划（v0.4）
 
 ### Phase A: 核心框架（已完成）
 
@@ -275,11 +358,11 @@ v0.3 的目标是把“建议”升级为“可执行契约”，减少后续实
 
 - [ ] 模型清单契约字段全量落地（本文件第 3 章）
 - [ ] RuntimeSelector 决策表实现 + 诊断输出（第 4 章）
-- [ ] LLM 流式事件 Schema 全后端对齐（第 5 章）
+- [ ] LLM 流式事件 Schema 全后端对齐（含 `eventType` 与 stop 规则，第 5 章）
 
 ### Phase D: 存储与调度（P0）
 
-- [ ] ModelManager 单飞锁 + 原子下载 + 逐 artifact 校验
+- [ ] ModelManager 单飞锁 + 原子下载 + 逐 artifact 校验（含状态机与进度事件，第 6 章）
 - [ ] TaskScheduler MVP（取消/超时/并发/分队列）
 - [ ] 统一错误结构落地
 
@@ -294,4 +377,4 @@ v0.3 的目标是把“建议”升级为“可执行契约”，减少后续实
 - 架构方向正确，MVP 路线已收敛
 - 依赖接入已完成（iOS/Android ONNX）
 - 平台实现不均衡：iOS 原型较前，Android/桌面仍需工程化
-- v0.3 已将关键建议固化为“可执行契约”
+- v0.4 已补齐流式语义、降级可复现规则、安装状态机三项关键防分叉约束
