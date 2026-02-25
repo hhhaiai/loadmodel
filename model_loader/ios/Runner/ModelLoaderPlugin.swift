@@ -16,6 +16,8 @@ public class ModelLoaderPlugin: NSObject, FlutterPlugin {
     private var ocrSession: ORTSession?
     private var sttSession: ORTSession?
     private var embeddingSession: ORTSession?
+    private var tokenizer: WordPieceTokenizer?
+    private var tokenizerPath: String?
 
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(
@@ -83,6 +85,18 @@ public class ModelLoaderPlugin: NSObject, FlutterPlugin {
             return
         }
 
+        // Load tokenizer if provided
+        if let tokenizerPathArg = args["tokenizerPath"] as? String {
+            tokenizerPath = tokenizerPathArg
+            tokenizer = WordPieceTokenizer()
+            do {
+                try tokenizer?.loadVocabulary(from: tokenizerPathArg)
+            } catch {
+                result(FlutterError(code: "TOKENIZER_ERROR", message: "Failed to load tokenizer: \(error.localizedDescription)", details: nil))
+                return
+            }
+        }
+
         do {
             if ortEnv == nil {
                 ortEnv = try ORTEnv(loggingLevel: ORTLoggingLevel.warning)
@@ -104,6 +118,8 @@ public class ModelLoaderPlugin: NSObject, FlutterPlugin {
 
     private func handleUnloadEmbeddingModel(result: @escaping FlutterResult) {
         embeddingSession = nil
+        tokenizer = nil
+        tokenizerPath = nil
         result(true)
     }
 
@@ -121,8 +137,20 @@ public class ModelLoaderPlugin: NSObject, FlutterPlugin {
 
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                // Tokenize input text
-                let inputIds = self.simpleTokenize(text: text)
+                // Tokenize input text using WordPiece tokenizer
+                var inputIds: [Int64]
+                if let tokenizer = self.tokenizer {
+                    inputIds = tokenizer.encode(text).map { Int64($0) }
+                } else {
+                    // Fallback to simple tokenization
+                    inputIds = self.simpleTokenize(text: text)
+                }
+
+                // Truncate if needed
+                let maxLength = 512
+                if inputIds.count > maxLength {
+                    inputIds = Array(inputIds.prefix(maxLength))
+                }
 
                 // Create input tensor [batch, seq_len]
                 let inputTensor = try self.createInt64Tensor(data: inputIds, shape: [1, Int64(inputIds.count)])
