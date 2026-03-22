@@ -1,0 +1,19 @@
+#!/bin/bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+ARCHIVE_TARGET_DIR="${ARCHIVE_TARGET_DIR:-third_party/llama.cpp}"
+ARCHIVE_OUTPUT_DIR="${ARCHIVE_OUTPUT_DIR:-third_party/llama_cpp_archive}"
+ARCHIVE_NAME="${ARCHIVE_NAME:-third_party_llama_cpp.tar.gz}"
+ARCHIVE_KEEP_SOURCE="${ARCHIVE_KEEP_SOURCE:-1}"
+CHUNK_SIZE="${CHUNK_SIZE:-49m}"
+
+cd "$SCRIPT_DIR"
+
+ARCHIVE_TARGET_DIR="$ARCHIVE_TARGET_DIR" \
+ARCHIVE_OUTPUT_DIR="$ARCHIVE_OUTPUT_DIR" \
+ARCHIVE_NAME="$ARCHIVE_NAME" \
+ARCHIVE_KEEP_SOURCE="$ARCHIVE_KEEP_SOURCE" \
+CHUNK_SIZE="$CHUNK_SIZE" \
+"$SCRIPT_DIR/auto_split.sh"

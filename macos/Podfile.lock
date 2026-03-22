@@ -1,0 +1,23 @@
+PODS:
+  - FlutterMacOS (1.0.0)
+  - onnxruntime-c (1.24.2)
+
+DEPENDENCIES:
+  - FlutterMacOS (from `Flutter/ephemeral`)
+  - onnxruntime-c (~> 1.24)
+
+SPEC REPOS:
+  trunk:
+    - onnxruntime-c
+
+EXTERNAL SOURCES:
+  FlutterMacOS:
+    :path: Flutter/ephemeral
+
+SPEC CHECKSUMS:
+  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+  onnxruntime-c: b58bafbc58707d165404665e46a7467a16e8e0e4
+
+PODFILE CHECKSUM: 152aebc8ffa9fa6dcd4e7595b0018b63c0ea5ffa
+
+COCOAPODS: 1.16.2

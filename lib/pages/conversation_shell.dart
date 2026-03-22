@@ -1,0 +1,107 @@
+import 'package:flutter/material.dart';
+
+import '../core/conversation_controller.dart';
+import '../widgets/conversation_timeline.dart';
+
+class ConversationShell extends StatefulWidget {
+  const ConversationShell({super.key});
+
+  @override
+  State<ConversationShell> createState() => _ConversationShellState();
+}
+
+class _ConversationShellState extends State<ConversationShell> {
+  final _controller = ConversationController();
+  final _inputController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_handleControllerUpdate);
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_handleControllerUpdate);
+    _controller.dispose();
+    _inputController.dispose();
+    super.dispose();
+  }
+
+  void _handleControllerUpdate() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _handleSend() {
+    final input = _inputController.text;
+    if (input.trim().isEmpty) {
+      _controller.send(input);
+      return;
+    }
+
+    _inputController.clear();
+    _controller.send(input);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('对话'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          IconButton(
+            key: const Key('conversation_clear_button'),
+            tooltip: '清空对话',
+            onPressed: _controller.entries.isEmpty ? null : _controller.reset,
+            icon: const Icon(Icons.delete_outline),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: ConversationTimeline(entries: _controller.entries),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: const Key('conversation_input_field'),
+                    controller: _inputController,
+                    decoration: const InputDecoration(
+                      labelText: '输入消息',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 3,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 120,
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    key: const Key('conversation_send_button'),
+                    onPressed: _controller.isRunning
+                        ? null
+                        : _handleSend,
+                    icon: Icon(
+                      _controller.isRunning ? Icons.hourglass_top : Icons.send,
+                      size: 20,
+                    ),
+                    label: const Text('发送'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

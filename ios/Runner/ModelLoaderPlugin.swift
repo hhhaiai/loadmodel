@@ -1,0 +1,469 @@
+//
+//  ModelLoaderPlugin.swift
+//  ModelLoader
+//
+//  ONNX Runtime plugin for Flutter
+//  支持: Embedding, STT, OCR
+//
+
+import Flutter
+import UIKit
+
+@_silgen_name("LlamaBridgeLoadModel")
+private func LlamaBridgeLoadModel(
+    _ modelPath: UnsafePointer<CChar>,
+    _ contextLength: Int32,
+    _ threads: Int32,
+    _ gpuLayers: Int32,
+    _ useGpu: Bool
+) -> Bool
+
+@_silgen_name("LlamaBridgeUnloadModel")
+private func LlamaBridgeUnloadModel()
+
+@_silgen_name("LlamaBridgeIsLoaded")
+private func LlamaBridgeIsLoaded() -> Bool
+
+@_silgen_name("LlamaBridgeFileExists")
+private func LlamaBridgeFileExists(_ modelPath: UnsafePointer<CChar>) -> Bool
+
+@_silgen_name("LlamaBridgeChat")
+private func LlamaBridgeChat(
+    _ prompt: UnsafePointer<CChar>,
+    _ maxTokens: Int32,
+    _ temperature: Double,
+    _ topP: Double,
+    _ topK: Int32,
+    _ repeatPenalty: Double,
+    _ seed: Int32
+) -> UnsafeMutablePointer<CChar>?
+
+@_silgen_name("LlamaBridgeChatMessages")
+private func LlamaBridgeChatMessages(
+    _ roles: UnsafePointer<UnsafePointer<CChar>?>,
+    _ contents: UnsafePointer<UnsafePointer<CChar>?>,
+    _ count: Int32,
+    _ maxTokens: Int32,
+    _ temperature: Double,
+    _ topP: Double,
+    _ topK: Int32,
+    _ repeatPenalty: Double,
+    _ seed: Int32
+) -> UnsafeMutablePointer<CChar>?
+
+@_silgen_name("LlamaBridgeFreeString")
+private func LlamaBridgeFreeString(_ ptr: UnsafeMutablePointer<CChar>)
+
+public class ModelLoaderPlugin: NSObject, FlutterPlugin {
+
+    private let maxTokensUpperBound = 2048
+
+    private struct NativeChatMessages {
+        let roles: [String]
+        let contents: [String]
+    }
+
+    private func normalizedBundledAssetPath(_ rawPath: String) -> String? {
+        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("/"), !trimmed.contains("..") else {
+            return nil
+        }
+        return trimmed
+    }
+
+    private func bundledFlutterAssetsRoot() -> String? {
+        if let frameworksPath = Bundle.main.privateFrameworksPath {
+            let root = (frameworksPath as NSString)
+                .appendingPathComponent("App.framework/flutter_assets")
+            let resolved = (root as NSString).resolvingSymlinksInPath
+            if FileManager.default.fileExists(atPath: resolved) {
+                return resolved
+            }
+        }
+
+        if let resourcePath = Bundle.main.resourcePath {
+            let root = (resourcePath as NSString)
+                .appendingPathComponent("Frameworks/App.framework/flutter_assets")
+            let resolved = (root as NSString).resolvingSymlinksInPath
+            if FileManager.default.fileExists(atPath: resolved) {
+                return resolved
+            }
+        }
+
+        return nil
+    }
+
+    private func isPath(_ resolvedPath: String, within allowedRoot: String) -> Bool {
+        if resolvedPath == allowedRoot {
+            return true
+        }
+
+        let normalizedRoot = allowedRoot.hasSuffix("/") ? allowedRoot : allowedRoot + "/"
+        return resolvedPath.hasPrefix(normalizedRoot)
+    }
+
+    private func resolveBundledAssetPath(_ assetPath: String) -> String? {
+        guard let assetsRoot = bundledFlutterAssetsRoot() else { return nil }
+
+        let candidate = (assetsRoot as NSString).appendingPathComponent(assetPath)
+        let standardized = (candidate as NSString).standardizingPath
+        let resolved = (standardized as NSString).resolvingSymlinksInPath
+
+        guard isPath(resolved, within: assetsRoot) else { return nil }
+        guard FileManager.default.fileExists(atPath: resolved) else { return nil }
+
+        return resolved
+    }
+
+    public static func register(with registrar: FlutterPluginRegistrar) {
+        let channel = FlutterMethodChannel(
+            name: "com.modelloader/model_runtime",
+            binaryMessenger: registrar.messenger()
+        )
+
+        let instance = ModelLoaderPlugin()
+        registrar.addMethodCallDelegate(instance, channel: channel)
+    }
+
+    public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        switch call.method {
+        // OCR Methods
+        case "loadOCRModel":
+            handleLoadOCRModel(call: call, result: result)
+        case "unloadOCRModel":
+            handleUnloadOCRModel(result: result)
+        case "recognizeOCR":
+            handleRecognizeOCR(call: call, result: result)
+
+        // STT Methods (SenseVoice/Whisper)
+        case "loadSTTModel":
+            handleLoadSTTModel(call: call, result: result)
+        case "unloadSTTModel":
+            handleUnloadSTTModel(result: result)
+        case "recognizeSTT":
+            handleRecognizeSTT(call: call, result: result)
+
+        // Embedding Methods (BGE)
+        case "loadEmbeddingModel":
+            handleLoadEmbeddingModel(call: call, result: result)
+        case "unloadEmbeddingModel":
+            handleUnloadEmbeddingModel(result: result)
+        case "getEmbedding":
+            handleGetEmbedding(call: call, result: result)
+
+        // TTS Methods
+        case "loadTTSModel":
+            result(FlutterError(code: "NOT_IMPLEMENTED", message: "TTS not implemented", details: nil))
+        case "unloadTTSModel":
+            result(true)
+        case "synthesizeTTS":
+            result(FlutterError(code: "NOT_IMPLEMENTED", message: "TTS not implemented", details: nil))
+
+        // LLM Methods
+        case "loadLLMModel":
+            handleLoadLLMModel(call: call, result: result)
+        case "unloadLLMModel":
+            handleUnloadLLMModel(result: result)
+        case "chatLLM":
+            handleChatLLM(call: call, result: result)
+        case "chatLLMStream":
+            handleChatLLMStream(call: call, result: result)
+        case "prepareBundledAsset":
+            handlePrepareBundledAsset(call: call, result: result)
+
+        default:
+            result(FlutterMethodNotImplemented)
+        }
+    }
+
+    private func runtimeUnavailableError(_ capability: String) -> FlutterError {
+        FlutterError(
+            code: "RUNTIME_NOT_AVAILABLE",
+            message: "\(capability) runtime is not available on iOS in this build",
+            details: "The iOS ONNX integration is not production-ready yet."
+        )
+    }
+
+    // MARK: - Embedding / STT / OCR
+
+    private func handleLoadEmbeddingModel(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        result(runtimeUnavailableError("Embedding"))
+    }
+
+    private func handleUnloadEmbeddingModel(result: @escaping FlutterResult) {
+        result(true)
+    }
+
+    private func handleGetEmbedding(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        result(runtimeUnavailableError("Embedding"))
+    }
+
+    private func handleLoadSTTModel(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        result(runtimeUnavailableError("STT"))
+    }
+
+    private func handleUnloadSTTModel(result: @escaping FlutterResult) {
+        result(true)
+    }
+
+    private func handleRecognizeSTT(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        result(runtimeUnavailableError("STT"))
+    }
+
+    private func handleLoadOCRModel(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        result(runtimeUnavailableError("OCR"))
+    }
+
+    private func handleUnloadOCRModel(result: @escaping FlutterResult) {
+        result(true)
+    }
+
+    private func handleRecognizeOCR(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        result(runtimeUnavailableError("OCR"))
+    }
+
+    // MARK: - LLM (native llama bridge)
+
+    private var llmLoaded: Bool = false
+
+    private func validateLlmModelPath(_ rawPath: String) -> String? {
+        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let fileUrl = URL(fileURLWithPath: trimmed).standardizedFileURL
+        guard fileUrl.pathExtension.lowercased() == "gguf" else { return nil }
+
+        let resolvedFilePath = (fileUrl.path as NSString).resolvingSymlinksInPath
+        guard FileManager.default.fileExists(atPath: resolvedFilePath) else { return nil }
+
+        let cachesUrl = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        let modelsUrl = cachesUrl?.appendingPathComponent("models", isDirectory: true).standardizedFileURL
+        guard let allowedRootRaw = modelsUrl?.path else { return nil }
+        let allowedRoot = (allowedRootRaw as NSString).resolvingSymlinksInPath
+        let bundledRoot = bundledFlutterAssetsRoot()
+
+        let isInCache = isPath(resolvedFilePath, within: allowedRoot)
+        let isInBundle = bundledRoot.map { isPath(resolvedFilePath, within: $0) } ?? false
+        guard isInCache || isInBundle else { return nil }
+
+        return resolvedFilePath
+    }
+
+    private func clampTemperature(_ value: Double) -> Double {
+        min(max(value, 0.0), 2.0)
+    }
+
+    private func clampTopP(_ value: Double) -> Double {
+        min(max(value, 0.05), 1.0)
+    }
+
+    private func clampTopK(_ value: Int) -> Int {
+        max(value, 1)
+    }
+
+    private func clampRepeatPenalty(_ value: Double) -> Double {
+        min(max(value, 0.0), 2.0)
+    }
+
+    private func clampMaxTokens(_ value: Int) -> Int {
+        min(max(value, 1), maxTokensUpperBound)
+    }
+
+    private func clampContextLength(_ value: Int) -> Int {
+        min(max(value, 512), 8192)
+    }
+
+    private func normalizeChatRole(_ rawRole: Any?) -> String {
+        let rawValue = rawRole.map { String(describing: $0) } ?? ""
+        let role = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch role {
+        case "system":
+            return "system"
+        case "assistant":
+            return "assistant"
+        default:
+            return "user"
+        }
+    }
+
+    private func normalizeChatMessages(_ rawMessages: [[String: Any]]) -> NativeChatMessages? {
+        var roles: [String] = []
+        var contents: [String] = []
+        roles.reserveCapacity(rawMessages.count)
+        contents.reserveCapacity(rawMessages.count)
+
+        for message in rawMessages {
+            let content = message["content"].map { String(describing: $0) } ?? ""
+            if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                continue
+            }
+
+            roles.append(normalizeChatRole(message["role"]))
+            contents.append(content)
+        }
+
+        guard !roles.isEmpty else { return nil }
+        return NativeChatMessages(roles: roles, contents: contents)
+    }
+
+    private func withDuplicatedCStrings<T>(_ strings: [String], body: ([UnsafePointer<CChar>?]) -> T) -> T {
+        let duplicated = strings.map { strdup($0) }
+        defer {
+            for pointer in duplicated {
+                free(pointer)
+            }
+        }
+
+        return body(duplicated.map { pointer in
+            pointer.map { UnsafePointer<CChar>($0) }
+        })
+    }
+
+    private func normalizeThreads(_ value: Int?) -> Int {
+        min(max(value ?? 0, 0), 32)
+    }
+
+    private func normalizeGpuLayers(_ value: Int?, useGpu: Bool) -> Int {
+        guard useGpu else { return 0 }
+        return max(value ?? 0, 0)
+    }
+
+    private func handleLoadLLMModel(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let modelPathArg = args["modelPath"] as? String else {
+            result(FlutterError(code: "INVALID_ARGS", message: "modelPath required", details: nil))
+            return
+        }
+
+        guard let modelPath = validateLlmModelPath(modelPathArg) else {
+            result(FlutterError(
+                code: "INVALID_ARGS",
+                message: "modelPath must be a .gguf file under app cache/models or bundled flutter_assets",
+                details: nil
+            ))
+            return
+        }
+
+        let contextLength = clampContextLength(args["contextLength"] as? Int ?? 2048)
+        let threads = normalizeThreads(args["threads"] as? Int)
+        let useGpu = args["useGpu"] as? Bool ?? true
+        let gpuLayers = normalizeGpuLayers(args["gpuLayers"] as? Int, useGpu: useGpu)
+
+        let exists = modelPath.withCString { cModelPath in
+            LlamaBridgeFileExists(cModelPath)
+        }
+
+        guard exists else {
+            result(FlutterError(code: "LOAD_ERROR", message: "Model file not found", details: nil))
+            return
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let loaded = modelPath.withCString { cModelPath in
+                LlamaBridgeLoadModel(
+                    cModelPath,
+                    Int32(contextLength),
+                    Int32(threads),
+                    Int32(gpuLayers),
+                    useGpu
+                )
+            }
+
+            self.llmLoaded = loaded
+            DispatchQueue.main.async {
+                if loaded {
+                    result(true)
+                } else {
+                    result(FlutterError(code: "LOAD_ERROR", message: "Failed to load LLM model via native bridge", details: nil))
+                }
+            }
+        }
+    }
+
+    private func handleUnloadLLMModel(result: @escaping FlutterResult) {
+        LlamaBridgeUnloadModel()
+        llmLoaded = false
+        result(true)
+    }
+
+    private func handleChatLLM(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard llmLoaded, LlamaBridgeIsLoaded() else {
+            result(FlutterError(code: "NOT_LOADED", message: "LLM model not loaded", details: nil))
+            return
+        }
+
+        guard let args = call.arguments as? [String: Any],
+              let messages = args["messages"] as? [[String: Any]] else {
+            result(FlutterError(code: "INVALID_ARGS", message: "messages required", details: nil))
+            return
+        }
+
+        guard let normalizedMessages = normalizeChatMessages(messages) else {
+            result(FlutterError(code: "INVALID_ARGS", message: "messages must include at least one non-empty entry", details: nil))
+            return
+        }
+
+        let temperature = clampTemperature(args["temperature"] as? Double ?? 0.7)
+        let maxTokens = clampMaxTokens(args["maxTokens"] as? Int ?? 2048)
+        let topP = clampTopP(args["topP"] as? Double ?? 0.9)
+        let topK = clampTopK(args["topK"] as? Int ?? 40)
+        let repeatPenalty = clampRepeatPenalty(args["repeatPenalty"] as? Double ?? 1.0)
+        let seed = args["seed"] as? Int ?? -1
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let response: String = self.withDuplicatedCStrings(normalizedMessages.roles) { cRoles in
+                self.withDuplicatedCStrings(normalizedMessages.contents) { cContents in
+                    cRoles.withUnsafeBufferPointer { roleBuffer in
+                        cContents.withUnsafeBufferPointer { contentBuffer in
+                            guard let roleBase = roleBuffer.baseAddress,
+                                  let contentBase = contentBuffer.baseAddress,
+                                  let cResult = LlamaBridgeChatMessages(
+                                      roleBase,
+                                      contentBase,
+                                      Int32(normalizedMessages.roles.count),
+                                      Int32(maxTokens),
+                                      temperature,
+                                      topP,
+                                      Int32(topK),
+                                      repeatPenalty,
+                                      Int32(seed)
+                                  ) else {
+                                return ""
+                            }
+                            defer { LlamaBridgeFreeString(cResult) }
+                            return String(cString: cResult)
+                        }
+                    }
+                }
+            }
+
+            DispatchQueue.main.async {
+                if response.isEmpty {
+                    result(FlutterError(code: "INFERENCE_FAILED", message: "LLM native inference returned empty output", details: nil))
+                } else {
+                    result(response)
+                }
+            }
+        }
+    }
+
+    private func handleChatLLMStream(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        handleChatLLM(call: call, result: result)
+    }
+
+    private func handlePrepareBundledAsset(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let assetPathArg = args["assetPath"] as? String,
+              let assetPath = normalizedBundledAssetPath(assetPathArg) else {
+            result(FlutterError(code: "INVALID_ARGS", message: "assetPath required", details: nil))
+            return
+        }
+
+        guard let resolvedPath = resolveBundledAssetPath(assetPath) else {
+            result(FlutterError(code: "ASSET_NOT_FOUND", message: "Bundled asset not found", details: nil))
+            return
+        }
+
+        result(resolvedPath)
+    }
+}
