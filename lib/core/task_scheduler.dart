@@ -129,6 +129,8 @@ class Task {
   /// Cancel callback
   void Function()? _onCancel;
 
+  final Completer<dynamic> _completion = Completer<dynamic>();
+
   Task({
     required this.id,
     required this.type,
@@ -161,6 +163,20 @@ class Task {
       status == TaskStatus.failed ||
       status == TaskStatus.cancelled ||
       status == TaskStatus.timeout;
+
+  Future<dynamic> get completion => _completion.future;
+
+  void completeWithResult(dynamic value) {
+    if (!_completion.isCompleted) {
+      _completion.complete(value);
+    }
+  }
+
+  void completeWithError(Object error, [StackTrace? stackTrace]) {
+    if (!_completion.isCompleted) {
+      _completion.completeError(error, stackTrace);
+    }
+  }
 }
 
 /// Queue configuration for a task type
@@ -260,7 +276,9 @@ class TaskScheduler {
     _instance = null;
   }
 
-  TaskScheduler._();
+  TaskScheduler._() {
+    initialize();
+  }
 
   /// Queue configurations
   final Map<TaskType, QueueConfig> _queueConfigs = {};
@@ -348,7 +366,7 @@ class TaskScheduler {
 
   /// Add task to appropriate queue
   void _addToQueue(Task task) {
-    final queue = _queues[task.type] ?? [];
+    final queue = _queues.putIfAbsent(task.type, () => <Task>[]);
     queue.add(task);
 
     // Sort by priority (higher priority first)
@@ -387,6 +405,7 @@ class TaskScheduler {
 
   /// Start a task
   Future<void> _startTask(Task task) async {
+    _queues[task.type]?.remove(task);
     task.status = TaskStatus.running;
     task.startedAt = DateTime.now();
     _runningTasks[task.id] = task;
@@ -407,9 +426,14 @@ class TaskScheduler {
     try {
       // Execute task
       task.result = await task.execute();
+      if (task.status == TaskStatus.timeout ||
+          task.status == TaskStatus.cancelled) {
+        return;
+      }
       task.status = TaskStatus.completed;
       task.completedAt = DateTime.now();
       _totalCompleted++;
+      task.completeWithResult(task.result);
 
       _emitEvent(TaskEvent(
         type: TaskEventType.completed,
@@ -422,6 +446,7 @@ class TaskScheduler {
         task.error = e;
         task.completedAt = DateTime.now();
         _totalFailed++;
+        task.completeWithError(e);
 
         _emitEvent(TaskEvent(
           type: TaskEventType.failed,
@@ -450,6 +475,7 @@ class TaskScheduler {
       task.status = TaskStatus.timeout;
       task.completedAt = DateTime.now();
       _totalTimeout++;
+      task.completeWithError(TaskTimeoutException(task.id));
 
       _emitEvent(TaskEvent(
         type: TaskEventType.timeout,
@@ -460,22 +486,7 @@ class TaskScheduler {
 
   /// Wait for task completion
   Future<dynamic> _waitForTask(Task task) async {
-    while (!task.isDone) {
-      await Future.delayed(const Duration(milliseconds: 50));
-    }
-
-    switch (task.status) {
-      case TaskStatus.completed:
-        return task.result;
-      case TaskStatus.failed:
-        throw task.error ?? Exception('Task failed');
-      case TaskStatus.cancelled:
-        throw TaskCancelledException(task.id);
-      case TaskStatus.timeout:
-        throw TaskTimeoutException(task.id);
-      default:
-        throw Exception('Unknown task status: ${task.status}');
-    }
+    return task.completion;
   }
 
   /// Cancel a task by ID (per CLAUDE.md Section 7.2)
@@ -489,9 +500,11 @@ class TaskScheduler {
     if (!task.cancellable) return false;
 
     if (task.status == TaskStatus.pending) {
+      _queues[task.type]?.remove(task);
       task.status = TaskStatus.cancelled;
       task.completedAt = DateTime.now();
       _totalCancelled++;
+      task.completeWithError(TaskCancelledException(task.id));
 
       _emitEvent(TaskEvent(
         type: TaskEventType.cancelled,

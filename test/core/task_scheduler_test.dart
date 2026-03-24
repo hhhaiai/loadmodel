@@ -320,4 +320,34 @@ void main() {
       expect(exception.toString(), equals('Task timeout: task_123'));
     });
   });
+
+  group('TaskScheduler execution', () {
+    test('submit works without explicit initialize call', () async {
+      TaskScheduler.resetInstance();
+      final scheduler = TaskScheduler.instance;
+
+      final result = await scheduler.submit(
+        type: TaskType.other,
+        execute: () async => 'ok',
+      );
+
+      expect(result, equals('ok'));
+    });
+
+    test('timeout completes with TaskTimeoutException even if task finishes later', () async {
+      TaskScheduler.resetInstance();
+      final scheduler = TaskScheduler.instance;
+
+      final future = scheduler.submit(
+        type: TaskType.other,
+        timeout: const Duration(milliseconds: 20),
+        execute: () async {
+          await Future<void>.delayed(const Duration(milliseconds: 80));
+          return 'late';
+        },
+      );
+
+      await expectLater(future, throwsA(isA<TaskTimeoutException>()));
+    });
+  });
 }

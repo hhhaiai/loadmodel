@@ -12,11 +12,14 @@ import 'runtime/ocr_runtime_stub.dart';
 import 'runtime/tts_runtime_stub.dart';
 import 'runtime/stt_runtime_stub.dart';
 import 'runtime/embedding_runtime_stub.dart';
+import 'runtime/llm_runtime_mobile.dart';
+import 'runtime/llm_runtime_llama.cpp.dart';
 import 'runtime/runtime_factory.dart';
 import 'runtime/runtime_selector.dart';
 import 'models/model_type.dart';
 import 'models/model_registry.dart';
 import 'models/model_manifest.dart';
+import 'models/llm_model_catalog.dart';
 
 /// ModelLoader 配置
 class ModelLoaderConfig {
@@ -52,6 +55,16 @@ class ModelLoaderConfig {
 
   /// 获取自定义模型目录
   String get customDir => customModelPath ?? PlatformUtils.getDefaultCustomModelDirSync();
+}
+
+class ResolvedLLMLoadConfig {
+  final SelectionReport? selectionReport;
+  final LLMConfig config;
+
+  const ResolvedLLMLoadConfig({
+    required this.selectionReport,
+    required this.config,
+  });
 }
 
 /// ModelLoader SDK 入口
@@ -317,14 +330,28 @@ class ModelLoader {
           requiredArtifacts: _defaultEmbeddingArtifacts,
         );
       case ModelType.llm:
+        final option = LLMModelCatalog.getById(
+          modelId ?? LLMModelCatalog.defaultModelId,
+        );
+        final quantization = option?.quantization;
         return ModelManifestItem(
-          id: modelId ?? 'qwen-3.5-0.8b-q8_0',
+          id: option?.id ?? modelId ?? 'qwen-3.5-0.8b-q8_0',
           type: ModelType.llm,
           version: version,
           backendHints: const ['llama.cpp'],
-          quantization: 'Q8_0',
-          contextLength: 2048,
+          quantization: quantization == null || quantization == '未知'
+              ? null
+              : quantization,
+          contextLength: 4096,
+          defaultGenerationConfig: const DefaultGenerationConfig(
+            temperature: 0.7,
+            topP: 0.9,
+            maxTokens: 2048,
+          ),
           requiredArtifacts: _defaultLLMArtifacts,
+          metadata: {
+            'minMemoryMB': option?.minMemoryMB ?? 2048,
+          },
         );
       default:
         return null;
@@ -382,6 +409,117 @@ class ModelLoader {
       availableMemoryMB: availableMemoryMB,
       cpuCores: cpuCores,
     );
+  }
+
+  ResolvedLLMLoadConfig resolveLLMLoadConfig({
+    required String modelPath,
+    String? modelId,
+    Map<String, dynamic>? uiSettings,
+    int? availableMemoryMB,
+    int? cpuCores,
+  }) {
+    final saved = uiSettings ?? _configManager.uiSettings;
+    final requestedContextLength =
+        ((saved['contextLength'] as num?)?.toInt() ?? 2048).clamp(512, 4096);
+    final requestedMaxTokens =
+        ((saved['maxTokens'] as num?)?.toInt() ?? 2048).clamp(1, 4096);
+    final temperature = ((saved['temperature'] as num?)?.toDouble() ?? 0.7)
+        .clamp(0.0, 2.0);
+
+    final report = selectRuntimeForLoadType(
+      type: ModelType.llm,
+      modelId: modelId,
+      availableMemoryMB: availableMemoryMB,
+      cpuCores: cpuCores,
+    );
+    final decision = report?.finalDecision;
+
+    final resolvedContextLength = decision == null
+        ? requestedContextLength
+        : requestedContextLength.clamp(512, decision.contextLength);
+    final resolvedMaxTokens = requestedMaxTokens.clamp(
+      1,
+      resolvedContextLength,
+    );
+    final resolvedThreads = decision?.threads ??
+        (PlatformUtils.processorCount > 1 ? PlatformUtils.processorCount - 1 : 1);
+    final gpuLayers = (decision?.gpuLayers ?? 0) > 0
+        ? decision!.gpuLayers
+        : null;
+    final useGpu =
+        decision?.provider == ProviderType.gpu && (gpuLayers ?? 0) > 0;
+
+    return ResolvedLLMLoadConfig(
+      selectionReport: report,
+      config: LLMConfig(
+        modelPath: modelPath,
+        contextLength: resolvedContextLength,
+        maxTokens: resolvedMaxTokens,
+        temperature: temperature,
+        topP: 0.9,
+        threads: resolvedThreads,
+        gpuLayers: gpuLayers,
+        useGpu: useGpu,
+      ),
+    );
+  }
+
+  String describeCurrentRuntime(ModelType type) {
+    switch (type) {
+      case ModelType.llm:
+        if (_llm is LLMRuntimeLlamaCpp) {
+          return 'llama.cpp server';
+        }
+        if (_llm is LLMRuntimeMobile) {
+          return '移动端原生通道';
+        }
+        if (_llm is LLMRuntimeStub) {
+          return 'Stub';
+        }
+        return _llm.runtimeType.toString();
+      case ModelType.embedding:
+        return _describeRuntimeInstance(
+          _embedding,
+          onnxLabel: 'ONNX Runtime',
+          stubLabel: 'Stub',
+        );
+      case ModelType.stt:
+        return _describeRuntimeInstance(
+          _stt,
+          onnxLabel: 'ONNX Runtime',
+          stubLabel: 'Stub',
+        );
+      case ModelType.tts:
+        return _describeRuntimeInstance(
+          _tts,
+          onnxLabel: 'ONNX Runtime',
+          stubLabel: 'Stub',
+        );
+      case ModelType.ocr:
+        return _describeRuntimeInstance(
+          _ocr,
+          onnxLabel: 'ONNX Runtime',
+          stubLabel: 'Stub',
+        );
+      case ModelType.classification:
+      case ModelType.custom:
+        return '未配置';
+    }
+  }
+
+  String _describeRuntimeInstance(
+    Object runtime, {
+    required String onnxLabel,
+    required String stubLabel,
+  }) {
+    final typeName = runtime.runtimeType.toString();
+    if (typeName.contains('Stub')) {
+      return stubLabel;
+    }
+    if (typeName.contains('Impl')) {
+      return onnxLabel;
+    }
+    return typeName;
   }
 
   /// 释放资源
