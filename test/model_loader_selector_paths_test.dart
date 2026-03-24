@@ -91,5 +91,28 @@ void main() {
       expect(report.finalDecision.backend, equals(BackendType.llamaCpp));
       expect(report.finalDecision.provider, isNotNull);
     });
+
+    test('resolveLLMLoadConfig applies selection decision to load config', () {
+      final ml = ModelLoader.instance;
+      final resolved = ml.resolveLLMLoadConfig(
+        modelPath: '/tmp/qwen.gguf',
+        modelId: 'qwen-1.5b',
+        uiSettings: const {
+          'contextLength': 4096,
+          'maxTokens': 4096,
+          'temperature': 1.1,
+        },
+        availableMemoryMB: 1024,
+        cpuCores: 6,
+      );
+
+      final report = resolved.selectionReport;
+      expect(report, isNotNull);
+      expect(report!.finalDecision.contextLength, equals(2048));
+      expect(resolved.config.contextLength, equals(2048));
+      expect(resolved.config.maxTokens, equals(2048));
+      expect(resolved.config.threads, equals(5));
+      expect(resolved.config.temperature, equals(1.1));
+    });
   });
 }

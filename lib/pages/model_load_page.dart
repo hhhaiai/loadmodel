@@ -9,7 +9,6 @@ import '../model_loader.dart';
 import '../models/llm_model_catalog.dart';
 import '../models/model_type.dart';
 import '../runtime/embedding_runtime.dart';
-import '../runtime/llm_runtime.dart';
 import '../runtime/ocr_runtime.dart';
 import '../runtime/stt_runtime.dart';
 import '../models/model_loader_exception.dart';
@@ -137,87 +136,84 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
         title: const Text('加载模型'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: Padding(
+      body: ListView(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            DropdownButtonFormField<String>(
-              key: const Key('load_model_type_dropdown'),
-              initialValue: _selectedType,
-              decoration: const InputDecoration(
-                labelText: '模型类型',
-                border: OutlineInputBorder(),
-              ),
-              items: const [
-                DropdownMenuItem(
-                  value: 'embedding',
-                  child: Text('📊 Embedding (文本向量)'),
-                ),
-                DropdownMenuItem(value: 'stt', child: Text('🎤 STT (语音识别)')),
-                DropdownMenuItem(value: 'tts', child: Text('🔊 TTS (语音合成)')),
-                DropdownMenuItem(value: 'ocr', child: Text('📷 OCR (文字识别)')),
-                DropdownMenuItem(value: 'llm', child: Text('💬 LLM (对话模型)')),
-              ],
-              onChanged: (v) => setState(() {
-                _selectedType = v!;
-                _status = '';
-              }),
+        children: [
+          DropdownButtonFormField<String>(
+            key: const Key('load_model_type_dropdown'),
+            initialValue: _selectedType,
+            decoration: const InputDecoration(
+              labelText: '模型类型',
+              border: OutlineInputBorder(),
             ),
-            const SizedBox(height: 16),
-            if (_selectedType == 'llm')
-              Column(
-                children: [
-                  DropdownButtonFormField<String>(
-                    key: const Key('load_llm_model_dropdown'),
-                    initialValue: _selectedLLMModel,
-                    decoration: const InputDecoration(
-                      labelText: 'LLM 模型',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: LLMModelCatalog.bundledIds.map((modelId) {
-                      final option = LLMModelCatalog.getById(modelId)!;
-                      return DropdownMenuItem<String>(
-                        value: option.id,
-                        child: Text(option.loadDropdownLabel),
-                      );
-                    }).toList(),
-                    onChanged: (v) => setState(() {
-                      _selectedLLMModel = v!;
-                      _status = '';
-                    }),
+            items: const [
+              DropdownMenuItem(
+                value: 'embedding',
+                child: Text('📊 Embedding (文本向量)'),
+              ),
+              DropdownMenuItem(value: 'stt', child: Text('🎤 STT (语音识别)')),
+              DropdownMenuItem(value: 'tts', child: Text('🔊 TTS (语音合成)')),
+              DropdownMenuItem(value: 'ocr', child: Text('📷 OCR (文字识别)')),
+              DropdownMenuItem(value: 'llm', child: Text('💬 LLM (对话模型)')),
+            ],
+            onChanged: (v) => setState(() {
+              _selectedType = v!;
+              _status = '';
+            }),
+          ),
+          const SizedBox(height: 16),
+          if (_selectedType == 'llm')
+            Column(
+              children: [
+                DropdownButtonFormField<String>(
+                  key: const Key('load_llm_model_dropdown'),
+                  initialValue: _selectedLLMModel,
+                  decoration: const InputDecoration(
+                    labelText: 'LLM 模型',
+                    border: OutlineInputBorder(),
                   ),
-                  const SizedBox(height: 16),
-                ],
-              ),
-            _buildRuntimeInfo(),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              key: const Key('load_model_button'),
-              onPressed: _isLoading ? null : _loadModel,
-              icon: _isLoading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.upload),
-              label: Text(_isLoading ? '加载中...' : '加载模型'),
-            ),
-            const SizedBox(height: 16),
-            if (_status.isNotEmpty)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: _status.contains('成功')
-                      ? Colors.green.shade100
-                      : Colors.red.shade100,
-                  borderRadius: BorderRadius.circular(8),
+                  items: LLMModelCatalog.bundledIds.map((modelId) {
+                    final option = LLMModelCatalog.getById(modelId)!;
+                    return DropdownMenuItem<String>(
+                      value: option.id,
+                      child: Text(option.loadDropdownLabel),
+                    );
+                  }).toList(),
+                  onChanged: (v) => setState(() {
+                    _selectedLLMModel = v!;
+                    _status = '';
+                  }),
                 ),
-                child: Text(_status),
+                const SizedBox(height: 16),
+              ],
+            ),
+          _buildRuntimeInfo(),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            key: const Key('load_model_button'),
+            onPressed: _isLoading ? null : _loadModel,
+            icon: _isLoading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.upload),
+            label: Text(_isLoading ? '加载中...' : '加载模型'),
+          ),
+          const SizedBox(height: 16),
+          if (_status.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _status.contains('成功')
+                    ? Colors.green.shade100
+                    : Colors.red.shade100,
+                borderRadius: BorderRadius.circular(8),
               ),
-          ],
-        ),
+              child: Text(_status),
+            ),
+        ],
       ),
     );
   }
@@ -236,6 +232,7 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
         : ModelType.ocr;
 
     final runtime = ml.getRecommendedRuntime(modelType);
+    final configuredRuntime = ml.describeCurrentRuntime(modelType);
 
     return Card(
       color: isMobile ? Colors.orange.shade50 : Colors.blue.shade50,
@@ -261,7 +258,11 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
             ...[
               Text(runtime.description),
               Text(
-                '运行时: ${runtime.runtime}',
+                '当前实现: $configuredRuntime',
+                style: const TextStyle(fontSize: 12),
+              ),
+              Text(
+                '推荐运行时: ${runtime.runtime}',
                 style: const TextStyle(fontSize: 12),
               ),
             ],
@@ -302,7 +303,10 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
         if (report != null) {
           logger.info('Load flow selection report: ${report.toJson()}');
           _status =
-              '运行时选择: ${report.finalDecision.backend.name}/${report.finalDecision.provider.name}';
+              '运行时选择: ${report.finalDecision.backend.name}/${report.finalDecision.provider.name}'
+              '\nthreads=${report.finalDecision.threads}, '
+              'ctx=${report.finalDecision.contextLength}, '
+              'gpuLayers=${report.finalDecision.gpuLayers}';
         }
       }
 
@@ -428,29 +432,21 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
             final modelPath = await _resolveAssetPath(selectedModel.assetPath!);
 
             if (modelPath != null) {
-              final saved = ModelLoader.instance.configManager.uiSettings;
-              final contextLength =
-                  ((saved['contextLength'] as num?)?.toInt() ?? 2048).clamp(
-                    512,
-                    4096,
-                  );
-              final temperature =
-                  ((saved['temperature'] as num?)?.toDouble() ?? 0.7).clamp(
-                    0.0,
-                    2.0,
-                  );
-
-              final llmConfig = LLMConfig(
+              final resolved = ml.resolveLLMLoadConfig(
                 modelPath: modelPath,
-                contextLength: contextLength,
-                threads: 4,
-                temperature: temperature,
+                modelId: selectedModel.id,
               );
+              final llmConfig = resolved.config;
+              final report = resolved.selectionReport;
 
               await ml.llm.loadModel(llmConfig);
               _status =
                   '✅ LLM 模型加载成功!\n\n'
                   '模型: ${selectedModel.successName}\n'
+                  '后端: ${report?.finalDecision.backend.name ?? 'unknown'}/'
+                  '${report?.finalDecision.provider.name ?? 'cpu'}\n'
+                  '上下文: ${llmConfig.contextLength}, 线程: ${llmConfig.threads ?? '-'}, '
+                  'GPU Layers: ${llmConfig.gpuLayers ?? 0}\n'
                   '你可以到"测试"页面进行对话测试';
             } else {
               _status = buildMissingLlmAssetStatus(

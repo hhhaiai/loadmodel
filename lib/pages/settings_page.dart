@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../model_loader.dart';
 import '../models/llm_model_catalog.dart';
+import '../models/model_type.dart';
 import '../runtime/llm_runtime.dart';
 import '../utils/logger.dart';
 
@@ -138,7 +139,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   String _getLLMRuntime() {
-    return 'llama.cpp (native channel)';
+    return ModelLoader.instance.describeCurrentRuntime(ModelType.llm);
   }
 
   Widget _buildSection(
