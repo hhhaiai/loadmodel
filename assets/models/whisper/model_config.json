@@ -1,0 +1,7 @@
+{
+  "model_id": "whisper-placeholder",
+  "family": "whisper",
+  "format": "onnx",
+  "file": "model.onnx",
+  "task": "stt"
+}

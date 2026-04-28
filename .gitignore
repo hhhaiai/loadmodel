@@ -34,11 +34,17 @@ migrate_working_dir/
 /coverage/
 
 # Extracted local model assets are restored from split archive parts.
-assets/models/**
+assets/models/**/*.onnx
+assets/models/**/*.bin
+assets/models/**/*.gguf
+assets/models/**/*.pt
+assets/models/**/*.pth
+assets/models/**/*.tflite
+assets/models/**/*.safetensors
 assets/models_archive/*.tar.gz
 third_party/llama.cpp/**
 third_party/llama_cpp_archive/*.tar.gz
-models/
+/models/
 
 # Symbolication related
 app.*.symbols

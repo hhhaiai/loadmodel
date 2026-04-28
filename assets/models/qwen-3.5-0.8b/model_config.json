@@ -1,0 +1,10 @@
+{
+  "model_id": "qwen-3.5-0.8b-q8_0",
+  "family": "qwen3.5",
+  "format": "gguf",
+  "file": "Qwen3.5-0.8B-Q8_0.gguf",
+  "context_length": 2048,
+  "temperature": 0.7,
+  "max_tokens": 512,
+  "chat_template": "qwen"
+}

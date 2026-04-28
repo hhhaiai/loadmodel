@@ -14,6 +14,7 @@ import 'runtime/stt_runtime_stub.dart';
 import 'runtime/embedding_runtime_stub.dart';
 import 'runtime/llm_runtime_mobile.dart';
 import 'runtime/llm_runtime_llama.cpp.dart';
+import 'runtime/onnx_runtime_flutter.dart';
 import 'runtime/runtime_factory.dart';
 import 'runtime/runtime_selector.dart';
 import 'models/model_type.dart';
@@ -239,16 +240,12 @@ class ModelLoader {
   Future<void> _initMobileRuntimes() async {
     logger.info('Initializing mobile runtimes...');
 
-    // 移动端使用 ONNX Runtime
-    // 尝试加载 ONNX 运行时
     try {
-      // 动态导入 - 需要运行时支持
-      // final onnx = await import('./onnx_runtime_flutter.dart');
-      // _ocr = onnx.ONNXRuntimes.ocr;
-      // _stt = onnx.ONNXRuntimes.stt;
-      // _embedding = onnx.ONNXRuntimes.embedding;
+      _ocr = ONNXRuntimes.ocr;
+      _stt = ONNXRuntimes.stt;
+      _embedding = ONNXRuntimes.embedding;
 
-      logger.info('Mobile runtimes: Using ONNX (when available)');
+      logger.info('Mobile runtimes: ONNX wired (OCR, STT, Embedding)');
     } catch (e) {
       logger.warning('ONNX runtime not available: $e');
     }

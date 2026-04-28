@@ -400,23 +400,31 @@ UI 设计原则：
 - 移动端 LLM 已稳定采用 MethodChannel + 原生桥接，不再依赖 `127.0.0.1` HTTP 服务。
 - App 已具备导航壳层：状态、加载、对话、测试、模型、设置六个页面。
 
-### 5.2 质量信号（2026-03-22）
+### 5.2 质量信号（2026-04-28）
 
 - `flutter analyze`：通过（No issues）
-- `flutter test`：通过（`00:29 +453: All tests passed!`）
-- 最近一次 `flutter test --coverage` 实测：`60.46%`（`1861/3078`）
-- `flutter build apk --debug`：通过（`✓ Built build/app/outputs/flutter-apk/app-debug.apk`）
-- `adb -s 37101FDJH0077P install -r build/app/outputs/flutter-apk/app-debug.apk`：通过（`Performing Streamed Install / Success`）
-- `adb -s 37101FDJH0077P shell pm clear com.modelloader.model_loader`：通过（`Success`）
-- `adb -s 37101FDJH0077P shell am start -n com.modelloader.model_loader/.MainActivity`：通过
-- `adb -s 37101FDJH0077P shell pidof com.modelloader.model_loader`：通过（2026-03-22 冷启动后 PID `22055`）
-- `adb shell uiautomator dump`：通过（2026-03-22 已确认 fresh install 后的状态页与对话页可正常打开）
-- `flutter build ios --release --no-codesign`：通过（`✓ Built build/ios/iphoneos/Runner.app`）
-- 2026-03-22 已在目录扁平化后的新根目录 `/Users/sanbo/Desktop/loadmodel` 复验上述本地链路，结论不变
-- 2026-03-22 已新增 `AppShell` 级加载+对话链路测试，覆盖 macOS/desktop 的“加载页 -> 对话页”主流程
-- `adb devices -l`：通过（当前 Android 真机 `37101FDJH0077P / Pixel 8` 在线）
-- `adb -s 37101FDJH0077P shell pm path com.modelloader.model_loader`：通过（当前 APK 已安装）
-- `xcrun devicectl device info apps --device 00008120-000605C42244201E`：通过（当前可查询到 `Model Loader / com.modelloader.modelLoader`）
+- `flutter test`：通过（`00:12 +504: All tests passed!`）
+- 最近一次 `flutter test --coverage` 实测：`60.46%`（`1861/3078`，2026-03-22）
+- `flutter build apk --debug`：通过（`✓ Built build/app/outputs/flutter-apk/app-debug.apk`，2026-04-28）
+- `flutter build ios --release --no-codesign`：通过（历史验证）
+- 2026-04-28 本轮新增 51 个测试（453→504），覆盖：
+  - SettingsPage（8 tests）
+  - StatusPage（6 tests）
+  - ModelsPage（5 tests）
+  - ConversationEntry contentBlocks 扩展（6 tests）
+  - ConversationTimeline widget + ContentBlock 渲染（18 tests）
+  - ModelLoadPage 扩展（+7 tests，总计 9）
+- 2026-04-28 本轮代码变更：
+  - ONNX 运行时已接入 ModelLoader（`_initMobileRuntimes` 取消注释并改为直接 import）
+  - ContentBlock 类型体系已建立（`lib/models/content_block.dart`）
+  - ConversationEntry 已扩展 contentBlocks 字段（向后兼容）
+  - ConversationTimeline 已支持 ContentBlock 渲染
+  - TestPage 已使用 ContentBlock 展示 Embedding/STT/OCR 结果
+  - TTS 入口已从 ModelLoadPage 和 TestPage 下拉框中移除
+  - **Android 原生 OCR 推理已实现**（`ModelLoaderPlugin.kt`）：bitmapToRgbFloatBuffer + CTC greedy decode + 字符字典
+  - OCR 模型下载脚本已创建（`scripts/download_ocr_model.sh`）
+  - OCR 字符字典已包含（`assets/models/ocr/ppocr_keys_v1.txt`，6900+ 中英文字符）
+  - OCR model_config.json 已更新为 PaddleOCR PP-OCRv4 规格
 
 ### 5.3 文档同步规则（从 2026-03-21 起执行）
 
@@ -691,7 +699,7 @@ UI 设计原则：
 | LLM Runtime（Dart） | 部分实现 | 桌面/移动主链路可用，结构化流式事件已落地，后端能力仍需持续对齐 |
 | ONNX Flutter Runtime（Dart） | 部分实现 | Embedding 可用；OCR/STT 已具备防假成功保护；TTS 仍未实现 |
 | iOS 原生插件 | 部分实现 | 本地 LLM bridge 可用；OCR/STT 仍是占位/简化实现；TTS 未实现 |
-| Android 原生插件 | 部分实现 | 本地 LLM JNI bridge 可用；OCR/STT 仍是占位/简化实现；TTS 未实现 |
+| Android 原生插件 | 部分实现 | 本地 LLM JNI bridge 可用；OCR 推理已实现（CTC decode + 字符字典，待真实模型验证）；STT 仍是占位；TTS 未实现 |
 | UI（加载/对话/测试/状态/设置） | 部分实现 | 设置持久化已实现；对话页与测试页已转向消息流展现；统一 UI 协议仍未完成 |
 | 测试体系 | 部分实现 | 单测基线已扩大到 453 个用例并全绿，覆盖率仍未达发布级 |
 | 多模态能力总线 | 规划中 | 仍需统一文本/视觉/语音/向量/Agent 能力入口 |
@@ -749,6 +757,22 @@ UI 设计原则：
    - 新增 `pack_llama_cpp.sh` / `restore_llama_cpp.sh` 作为 `third_party/llama.cpp/` 的归档与恢复入口。
    - 当前分片输出目录为 `third_party/llama_cpp_archive/`，本地解压目录 `third_party/llama.cpp/` 已加入 `.gitignore`。
    - Android 构建前提仍然是先恢复 `third_party/llama.cpp/`，否则 `android/app/src/main/cpp/CMakeLists.txt` 找不到源码目录。
+
+13. **ONNX 运行时已接入 + ContentBlock 统一展示 + TTS 入口隐藏 + Android OCR 推理实现 + 测试覆盖率提升（2026-04-28）**
+   - `lib/model_loader.dart`：`_initMobileRuntimes()` 已取消注释并改为直接 import ONNX 运行时，Embedding/OCR/STT 在移动端已接入。
+   - 新增 `lib/models/content_block.dart`：sealed class 体系（TextBlock、ErrorBlock、StatusBlock、EmbeddingBlock、OCRBlockDisplay、MetricBlock）。
+   - `lib/models/conversation_entry.dart`：新增 `contentBlocks` 字段和 `hasStructuredContent` getter，向后兼容。
+   - `lib/widgets/conversation_timeline.dart`：新增 `_buildContentBlocks()` 渲染器，按 block 类型分派展示。
+   - `lib/pages/test_page.dart`：Embedding/STT/OCR 结果已改用 ContentBlock 展示。
+   - `lib/pages/model_load_page.dart` 和 `lib/pages/test_page.dart`：TTS 下拉项已移除。
+   - **Android 原生 OCR 推理实现**（`ModelLoaderPlugin.kt`）：
+     - `bitmapToRgbFloatBuffer()`：Bitmap → NCHW RGB float buffer，归一化到 [-1, 1]
+     - `ctcGreedyDecode()`：CTC 贪心解码（argmax + 去重 + 去 blank）
+     - `loadOcrCharDict()`：从 assets 加载 `ppocr_keys_v1.txt` 字符字典（6900+ 中英文字符）
+     - `handleRecognizeOCR()`：完整推理链路（decode → resize 48×320 → normalize → ONNX inference → CTC decode → text + confidence）
+   - 新增 `scripts/download_ocr_model.sh`：PaddleOCR PP-OCRv4 mobile ONNX 模型下载脚本
+   - 新增 `assets/models/ocr/ppocr_keys_v1.txt`：中英文字符字典
+   - 测试从 453 增长到 504（+51），新增 SettingsPage/StatusPage/ModelsPage/ConversationTimeline/ConversationEntry/ModelLoadPage 扩展测试。
 
 ### 5.8 当前工程使用方法（2026-03-22）
 
@@ -944,7 +968,7 @@ UI 设计原则：
    - 当前：`部分满足`
 
 6. Android/iOS OCR/STT 至少一个真实模型端到端通过
-   - 当前：`未满足`
+   - 当前：`部分满足`（Android 原生 OCR 推理代码已实现：bitmap→float→ONNX→CTC decode→文本；字符字典已包含；待下载真实 ONNX 模型后端到端验证）
 
 7. 移动端 LLM 端内可运行（无外部 HTTP 依赖）
    - 当前：`已满足`

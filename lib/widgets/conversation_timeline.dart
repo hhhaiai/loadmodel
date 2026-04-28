@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/conversation_entry.dart';
+import '../models/content_block.dart';
 
 class ConversationTimeline extends StatelessWidget {
   const ConversationTimeline({
@@ -52,11 +53,65 @@ class ConversationTimeline extends StatelessWidget {
               ),
               child: isGeneratingAssistant
                   ? const Text('正在生成中...')
-                  : SelectableText(entry.text.isEmpty ? '...' : entry.text),
+                  : entry.hasStructuredContent
+                      ? _buildContentBlocks(context, entry.contentBlocks!)
+                      : SelectableText(entry.text.isEmpty ? '...' : entry.text),
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildContentBlocks(
+    BuildContext context,
+    List<ContentBlock> blocks,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: blocks.map((block) {
+        if (block is TextBlock) {
+          return SelectableText(block.text);
+        } else if (block is ErrorBlock) {
+          final prefix = block.code != null ? '[${block.code}] ' : '';
+          return Text(
+            '$prefix${block.message}',
+            style: TextStyle(color: Colors.red.shade700),
+          );
+        } else if (block is StatusBlock) {
+          return Text(
+            block.message,
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontStyle: FontStyle.italic,
+            ),
+          );
+        } else if (block is EmbeddingBlock) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Embedding 维度: ${block.dimension}'),
+              Text(
+                '前5值: ${block.preview.take(5).map((v) => v.toStringAsFixed(4)).join(", ")}',
+              ),
+            ],
+          );
+        } else if (block is OCRBlockDisplay) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('OCR 置信度: ${block.confidence.toStringAsFixed(2)}'),
+              SelectableText(block.text),
+            ],
+          );
+        } else if (block is MetricBlock) {
+          return Text(
+            '${block.label}: ${block.value}',
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+          );
+        }
+        return const SizedBox.shrink();
+      }).toList(),
     );
   }
 }

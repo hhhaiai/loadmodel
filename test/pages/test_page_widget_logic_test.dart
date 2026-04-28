@@ -129,10 +129,10 @@ void main() {
       await tester.tap(find.byKey(const Key('test_send_button')));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('✅ Embedding 结果:'), findsOneWidget);
-      expect(find.textContaining('维度: 6'), findsOneWidget);
+      expect(find.textContaining('✅ Embedding 完成'), findsOneWidget);
+      expect(find.textContaining('Embedding 维度: 6'), findsOneWidget);
       expect(
-        find.textContaining('前5个值: [1.0, 2.0, 3.0, 4.0, 5.0]'),
+        find.textContaining('前5值: 1.0000, 2.0000, 3.0000, 4.0000, 5.0000'),
         findsOneWidget,
       );
     });
