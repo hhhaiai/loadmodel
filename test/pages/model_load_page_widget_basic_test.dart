@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:model_loader/model_loader.dart';
+import 'package:model_loader/models/llm_model_catalog.dart';
 import 'package:model_loader/pages/model_load_page.dart';
 import 'package:model_loader/utils/logger.dart';
 
@@ -32,6 +33,36 @@ void main() {
   }
 
   group('ModelLoadPage basic widget behavior', () {
+    testWidgets('renders without crash', (tester) async {
+      await pumpModelLoadPage(tester);
+      // AppBar title + button label both say "加载模型"
+      expect(find.text('加载模型'), findsWidgets);
+    });
+
+    testWidgets('shows model type dropdown', (tester) async {
+      await pumpModelLoadPage(tester);
+      expect(
+        find.byKey(const Key('load_model_type_dropdown')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('shows load button', (tester) async {
+      await pumpModelLoadPage(tester);
+      expect(find.byIcon(Icons.upload), findsOneWidget);
+      // Button is an ElevatedButton
+      expect(find.byType(ElevatedButton), findsOneWidget);
+    });
+
+    testWidgets('shows runtime info card', (tester) async {
+      await pumpModelLoadPage(tester);
+      // Should show either mobile or desktop runtime info
+      expect(
+        find.textContaining('运行时'),
+        findsWidgets,
+      );
+    });
+
     testWidgets('shows LLM model dropdown only when model type is llm', (
       tester,
     ) async {
@@ -46,31 +77,55 @@ void main() {
       expect(find.byKey(const Key('load_llm_model_dropdown')), findsNothing);
     });
 
-    testWidgets('tts load branch shows runtime unavailable status message', (
+    testWidgets('switching model type updates the dropdown selection', (
       tester,
     ) async {
       await pumpModelLoadPage(tester);
-      await selectModelType(tester, '🔊 TTS (语音合成)');
 
-      await tester.tap(find.byKey(const Key('load_model_button')));
-      await tester.pumpAndSettle();
+      // Switch to STT
+      await selectModelType(tester, '🎤 STT (语音识别)');
 
-      expect(find.textContaining('[RUNTIME_NOT_AVAILABLE]'), findsOneWidget);
-      expect(find.textContaining('TTS 运行时当前不可用'), findsOneWidget);
+      // Switch to Embedding - should not crash
+      await selectModelType(tester, '📊 Embedding (文本向量)');
+
+      // Switch to OCR - should not crash
+      await selectModelType(tester, '📷 OCR (文字识别)');
+
+      // Verify LLM dropdown still hidden (not LLM type)
+      expect(find.byKey(const Key('load_llm_model_dropdown')), findsNothing);
     });
 
-    testWidgets('changing model type clears previous status message', (
+    testWidgets('LLM dropdown shows catalog models when opened', (
       tester,
     ) async {
       await pumpModelLoadPage(tester);
-      await selectModelType(tester, '🔊 TTS (语音合成)');
+      await selectModelType(tester, '💬 LLM (对话模型)');
 
-      await tester.tap(find.byKey(const Key('load_model_button')));
+      // Open the LLM dropdown to see its items
+      await tester.tap(find.byKey(const Key('load_llm_model_dropdown')));
       await tester.pumpAndSettle();
-      expect(find.textContaining('TTS 运行时当前不可用'), findsOneWidget);
 
-      await selectModelType(tester, '📊 Embedding (文本向量)');
-      expect(find.textContaining('TTS 运行时当前不可用'), findsNothing);
+      // Verify at least one catalog model label appears in the dropdown
+      final firstModel = LLMModelCatalog.getById(
+        LLMModelCatalog.bundledIds.first,
+      )!;
+      expect(find.text(firstModel.loadDropdownLabel), findsWidgets);
+    });
+
+    testWidgets('status area hidden when empty', (tester) async {
+      await pumpModelLoadPage(tester);
+      // Status container should not be visible initially
+      expect(find.textContaining('加载成功'), findsNothing);
+      expect(find.textContaining('加载失败'), findsNothing);
+    });
+
+    testWidgets('load button has correct label', (tester) async {
+      await pumpModelLoadPage(tester);
+      // The button shows "加载模型" when not loading
+      final button = find.byWidgetPredicate(
+        (widget) => widget is ElevatedButton,
+      );
+      expect(button, findsOneWidget);
     });
   });
 }

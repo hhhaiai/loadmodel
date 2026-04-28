@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../model_loader.dart';
 import '../models/conversation_entry.dart';
+import '../models/content_block.dart';
 import '../models/model_loader_exception.dart';
 import '../utils/logger.dart';
 import '../widgets/conversation_timeline.dart';
@@ -74,7 +75,6 @@ class _TestPageState extends State<TestPage> {
                   child: Text('📊 Embedding'),
                 ),
                 DropdownMenuItem(value: 'stt', child: Text('🎤 STT')),
-                DropdownMenuItem(value: 'tts', child: Text('🔊 TTS')),
                 DropdownMenuItem(value: 'ocr', child: Text('📷 OCR')),
               ],
               onChanged: (v) => setState(() => _selectedType = v!),
@@ -176,8 +176,14 @@ class _TestPageState extends State<TestPage> {
           _appendEntry(
             ConversationEntry(
               role: ConversationEntryRole.assistant,
-              text:
-                  '✅ Embedding 结果:\n维度: ${result.dimension}\n前5个值: ${result.embedding.take(5).toList()}',
+              text: '',
+              contentBlocks: [
+                const TextBlock('✅ Embedding 完成'),
+                EmbeddingBlock(
+                  dimension: result.dimension,
+                  preview: result.embedding.take(5).toList(),
+                ),
+              ],
             ),
           );
           break;
@@ -197,17 +203,13 @@ class _TestPageState extends State<TestPage> {
           _appendEntry(
             ConversationEntry(
               role: ConversationEntryRole.assistant,
-              text:
-                  '🎤 STT 结果:\n文本: ${result.text}\n置信度: ${result.confidence.toStringAsFixed(2)}\n语言: ${result.language ?? 'unknown'}',
-            ),
-          );
-          break;
-
-        case 'tts':
-          _appendEntry(
-            ConversationEntry(
-              role: ConversationEntryRole.error,
-              text: buildTestRuntimeUnavailableStatus(taskLabel: 'TTS'),
+              text: '',
+              contentBlocks: [
+                const TextBlock('🎤 STT 完成'),
+                TextBlock('文本: ${result.text}'),
+                MetricBlock('置信度', result.confidence.toStringAsFixed(2)),
+                MetricBlock('语言', result.language ?? 'unknown'),
+              ],
             ),
           );
           break;
@@ -298,8 +300,14 @@ class _TestPageState extends State<TestPage> {
           _appendEntry(
             ConversationEntry(
               role: ConversationEntryRole.assistant,
-              text:
-                  '📷 OCR 结果:\n文本: ${result.text}\n置信度: ${result.averageConfidence.toStringAsFixed(2)}',
+              text: '',
+              contentBlocks: [
+                const TextBlock('📷 OCR 完成'),
+                OCRBlockDisplay(
+                  text: result.text,
+                  confidence: result.averageConfidence,
+                ),
+              ],
             ),
           );
           break;

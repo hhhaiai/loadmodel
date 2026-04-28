@@ -134,7 +134,6 @@ void main() {
     await tester.pumpAndSettle();
     final optionText = switch (value) {
       'stt' => '🎤 STT',
-      'tts' => '🔊 TTS',
       'ocr' => '📷 OCR',
       _ => throw StateError('unsupported test type: $value'),
     };
@@ -145,25 +144,6 @@ void main() {
   }
 
   group('TestPage STT/OCR widget logic', () {
-    testWidgets('TTS shows runtime unavailable status', (tester) async {
-      await pumpTestPage(tester);
-      await selectTestType(tester, 'tts');
-      await tester.enterText(
-        find.byKey(const Key('test_input_field')),
-        'tts input',
-      );
-      await tester.tap(find.byKey(const Key('test_send_button')));
-      await tester.pumpAndSettle();
-
-      expect(
-        find.textContaining(
-          '[${ModelLoaderErrorCode.RUNTIME_NOT_AVAILABLE.code}]',
-        ),
-        findsOneWidget,
-      );
-      expect(find.textContaining('TTS 运行时当前不可用'), findsOneWidget);
-    });
-
     testWidgets('STT shows standardized not-loaded error', (tester) async {
       final ml = ModelLoader.instance;
       ml.setSTTRuntime(_FakeSTTRuntime(isLoaded: false));
@@ -211,7 +191,7 @@ void main() {
       await tester.tap(find.byKey(const Key('test_send_button')));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('🎤 STT 结果:'), findsOneWidget);
+      expect(find.textContaining('🎤 STT 完成'), findsOneWidget);
       expect(find.textContaining('文本: 你好 STT'), findsOneWidget);
       expect(find.textContaining('置信度: 0.91'), findsOneWidget);
       expect(find.textContaining('语言: zh'), findsOneWidget);
@@ -300,9 +280,9 @@ void main() {
       await tester.tap(find.byKey(const Key('test_send_button')));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('📷 OCR 结果:'), findsOneWidget);
-      expect(find.textContaining('文本: 你好 OCR'), findsOneWidget);
-      expect(find.textContaining('置信度: 0.86'), findsOneWidget);
+      expect(find.textContaining('📷 OCR 完成'), findsOneWidget);
+      expect(find.textContaining('OCR 置信度: 0.86'), findsOneWidget);
+      expect(find.textContaining('你好 OCR'), findsOneWidget);
     });
 
     testWidgets(

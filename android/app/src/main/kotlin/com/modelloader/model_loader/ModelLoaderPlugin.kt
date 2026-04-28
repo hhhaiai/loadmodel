@@ -449,6 +449,7 @@ class ModelLoaderPlugin : FlutterPlugin, MethodCallHandler {
 
             ocrSession = env.createSession(modelPath, sessionOptions)
             android.util.Log.i("ModelLoader", "OCR model loaded: $modelPath")
+            loadOcrCharDict(applicationContext)
             result.success(true)
         } catch (e: Exception) {
             android.util.Log.e("ModelLoader", "Failed to load OCR model: ${e.message}")
@@ -486,7 +487,6 @@ class ModelLoaderPlugin : FlutterPlugin, MethodCallHandler {
 
         scope.launch {
             try {
-                // Decode image
                 val bitmap = BitmapFactory.decodeByteArray(imageData, 0, imageData.size)
                 if (bitmap == null) {
                     withContext(Dispatchers.Main) {
@@ -495,25 +495,42 @@ class ModelLoaderPlugin : FlutterPlugin, MethodCallHandler {
                     return@launch
                 }
 
-                // Preprocess image for OCR
-                // Note: Actual preprocessing depends on the OCR model architecture
-                // Common approaches: resize to model input size, normalize, convert to tensor
-                val inputWidth = 640
-                val inputHeight = 640
+                // PaddleOCR PP-OCRv4 rec: input [1, 3, 48, 320], RGB normalized to [-1, 1]
+                val inputHeight = 48
+                val inputWidth = 320
                 val scaledBitmap = Bitmap.createScaledBitmap(bitmap, inputWidth, inputHeight, true)
 
-                // Note: ONNX tensor creation requires correct allocator API
-                // OCR inference requires model-specific preprocessing and tensor creation
-                // Placeholder for now - full implementation depends on model architecture
+                val floatBuffer = bitmapToRgbFloatBuffer(scaledBitmap, mean = floatArrayOf(0.5f, 0.5f, 0.5f), std = floatArrayOf(0.5f, 0.5f, 0.5f))
 
-                android.util.Log.w("ModelLoader", "OCR inference - placeholder (model-specific implementation required)")
+                val inputName = session.inputNames.first()
+                val tensor = OnnxTensor.createTensor(env, floatBuffer, longArrayOf(1, 3, inputHeight.toLong(), inputWidth.toLong()))
 
-                // Cleanup
+                val output = session.run(mapOf(inputName to tensor))
+                val outputTensor = output.first().value
+                val outputArray = outputTensor.value as Array<Array<FloatArray>>
+
+                val text = ctcGreedyDecode(outputArray[0])
+
+                // Compute average confidence from softmax probabilities
+                var totalConf = 0.0f
+                var charCount = 0
+                for (row in outputArray[0]) {
+                    var maxVal = Float.MIN_VALUE
+                    for (v in row) { if (v > maxVal) maxVal = v }
+                    totalConf += maxVal
+                    charCount++
+                }
+                val confidence = if (charCount > 0) (totalConf / charCount).toDouble() else 0.0
+
+                tensor.close()
+                output.close()
                 bitmap.recycle()
                 scaledBitmap.recycle()
 
+                android.util.Log.i("ModelLoader", "OCR result: '$text' (conf=${String.format("%.2f", confidence)})")
+
                 withContext(Dispatchers.Main) {
-                    result.success(mapOf("text" to "OCR result (model-specific preprocessing required)", "confidence" to 0.0))
+                    result.success(mapOf("text" to text, "confidence" to confidence))
                 }
             } catch (e: Exception) {
                 android.util.Log.e("ModelLoader", "OCR inference error: ${e.message}", e)
@@ -525,20 +542,73 @@ class ModelLoaderPlugin : FlutterPlugin, MethodCallHandler {
     }
 
     /**
-     * Process OCR model output to extract text
+     * Convert Bitmap to NCHW RGB float buffer with normalization.
+     * Pixel = (pixel / 255.0 - mean) / std
      */
-    private fun processOCROutput(outputValue: Any): String {
-        return try {
-            when (outputValue) {
-                is Array<*> -> {
-                    // Try to decode CTC output or attention output
-                    val text = outputValue.filterIsInstance<Number>().joinToString("") { it.toString() }
-                    if (text.isNotEmpty()) text else "OCR result (decoding required)"
+    private fun bitmapToRgbFloatBuffer(bitmap: Bitmap, mean: FloatArray, std: FloatArray): java.nio.FloatBuffer {
+        val width = bitmap.width
+        val height = bitmap.height
+        val buffer = java.nio.FloatBuffer.allocate(1 * 3 * height * width)
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+
+        // CHW layout: R plane, G plane, B plane
+        val rPlane = FloatArray(height * width)
+        val gPlane = FloatArray(height * width)
+        val bPlane = FloatArray(height * width)
+
+        for (i in pixels.indices) {
+            val pixel = pixels[i]
+            rPlane[i] = (((pixel shr 16 and 0xFF) / 255.0f) - mean[0]) / std[0]
+            gPlane[i] = (((pixel shr 8 and 0xFF) / 255.0f) - mean[1]) / std[1]
+            bPlane[i] = (((pixel and 0xFF) / 255.0f) - mean[2]) / std[2]
+        }
+
+        buffer.put(rPlane)
+        buffer.put(gPlane)
+        buffer.put(bPlane)
+        buffer.rewind()
+        return buffer
+    }
+
+    /**
+     * CTC greedy decode: argmax per timestep, collapse repeated chars, remove blank (index 0).
+     */
+    private fun ctcGreedyDecode(logits: Array<FloatArray>): String {
+        val sb = StringBuilder()
+        var lastIdx = -1
+        for (timestep in logits) {
+            var maxIdx = 0
+            var maxVal = timestep[0]
+            for (i in 1 until timestep.size) {
+                if (timestep[i] > maxVal) {
+                    maxVal = timestep[i]
+                    maxIdx = i
                 }
-                else -> "OCR result (post-processing required)"
             }
+            if (maxIdx != 0 && maxIdx != lastIdx) {
+                // Map index to character: index 1 = first char in dictionary (index 0 is blank)
+                val charIdx = maxIdx - 1
+                val ch = ocrCharDict.getOrElse(charIdx) { '?' }
+                sb.append(ch)
+            }
+            lastIdx = maxIdx
+        }
+        return sb.toString()
+    }
+
+    /** Character dictionary loaded from ppocr_keys_v1.txt */
+    private var ocrCharDict: List<String> = emptyList()
+
+    private fun loadOcrCharDict(context: Context) {
+        try {
+            val lines = context.assets.open("models/ocr/ppocr_keys_v1.txt")
+                .bufferedReader().readLines()
+            ocrCharDict = lines.filter { it.isNotEmpty() }
+            android.util.Log.i("ModelLoader", "OCR char dict loaded: ${ocrCharDict.size} chars")
         } catch (e: Exception) {
-            "OCR result (processing error: ${e.message})"
+            android.util.Log.w("ModelLoader", "Failed to load OCR char dict: ${e.message}")
+            ocrCharDict = emptyList()
         }
     }
 

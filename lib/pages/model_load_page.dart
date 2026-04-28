@@ -152,7 +152,6 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
                 child: Text('📊 Embedding (文本向量)'),
               ),
               DropdownMenuItem(value: 'stt', child: Text('🎤 STT (语音识别)')),
-              DropdownMenuItem(value: 'tts', child: Text('🔊 TTS (语音合成)')),
               DropdownMenuItem(value: 'ocr', child: Text('📷 OCR (文字识别)')),
               DropdownMenuItem(value: 'llm', child: Text('💬 LLM (对话模型)')),
             ],
@@ -227,8 +226,6 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
         ? ModelType.embedding
         : _selectedType == 'stt'
         ? ModelType.stt
-        : _selectedType == 'tts'
-        ? ModelType.tts
         : ModelType.ocr;
 
     final runtime = ml.getRecommendedRuntime(modelType);
@@ -379,10 +376,6 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
             logger.warning('STT load failed', e, st);
             _status = _buildLoadErrorStatus(taskLabel: 'STT', error: e);
           }
-          break;
-
-        case 'tts':
-          _status = buildRuntimeUnavailableStatus(taskLabel: 'TTS');
           break;
 
         case 'ocr':
