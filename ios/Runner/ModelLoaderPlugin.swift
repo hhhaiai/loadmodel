@@ -184,42 +184,223 @@ public class ModelLoaderPlugin: NSObject, FlutterPlugin {
         )
     }
 
-    // MARK: - Embedding / STT / OCR
+    // MARK: - Embedding
 
     private func handleLoadEmbeddingModel(call: FlutterMethodCall, result: @escaping FlutterResult) {
-        result(runtimeUnavailableError("Embedding"))
+        guard let args = call.arguments as? [String: Any],
+              let modelPathArg = args["modelPath"] as? String else {
+            result(FlutterError(code: "INVALID_ARGS", message: "modelPath required", details: nil))
+            return
+        }
+
+        // Resolve model path
+        let modelPath: String
+        if let resolved = resolveBundledAssetPath(modelPathArg) {
+            modelPath = resolved
+        } else {
+            modelPath = modelPathArg
+        }
+
+        // Resolve tokenizer path
+        let tokenizerPath: String?
+        if let tokenizerPathArg = args["tokenizerPath"] as? String {
+            if let resolved = resolveBundledAssetPath(tokenizerPathArg) {
+                tokenizerPath = resolved
+            } else {
+                tokenizerPath = tokenizerPathArg
+            }
+        } else {
+            // Try to find tokenizer.json or vocab.txt near model
+            let modelDir = (modelPath as NSString).deletingLastPathComponent
+            let tokenizerJson = (modelDir as NSString).appendingPathComponent("tokenizer.json")
+            let vocabTxt = (modelDir as NSString).appendingPathComponent("vocab.txt")
+            if FileManager.default.fileExists(atPath: tokenizerJson) {
+                tokenizerPath = tokenizerJson
+            } else if FileManager.default.fileExists(atPath: vocabTxt) {
+                tokenizerPath = vocabTxt
+            } else {
+                tokenizerPath = nil
+            }
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try OnnxRuntimeManager.shared.loadEmbeddingModel(
+                    modelPath: modelPath,
+                    tokenizerPath: tokenizerPath
+                )
+                DispatchQueue.main.async {
+                    result(true)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "LOAD_ERROR", message: "Failed to load embedding model: \(error.localizedDescription)", details: nil))
+                }
+            }
+        }
     }
 
     private func handleUnloadEmbeddingModel(result: @escaping FlutterResult) {
+        OnnxRuntimeManager.shared.unloadEmbeddingModel()
         result(true)
     }
 
     private func handleGetEmbedding(call: FlutterMethodCall, result: @escaping FlutterResult) {
-        result(runtimeUnavailableError("Embedding"))
+        guard let args = call.arguments as? [String: Any],
+              let text = args["text"] as? String else {
+            result(FlutterError(code: "INVALID_ARGS", message: "text required", details: nil))
+            return
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let (embedding, dimension) = try OnnxRuntimeManager.shared.getEmbedding(text: text)
+                DispatchQueue.main.async {
+                    result([
+                        "embedding": embedding,
+                        "dimension": dimension
+                    ])
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "INFERENCE_ERROR", message: "Embedding inference failed: \(error.localizedDescription)", details: nil))
+                }
+            }
+        }
     }
 
+    // MARK: - STT
+
     private func handleLoadSTTModel(call: FlutterMethodCall, result: @escaping FlutterResult) {
-        result(runtimeUnavailableError("STT"))
+        guard let args = call.arguments as? [String: Any],
+              let modelPathArg = args["modelPath"] as? String else {
+            result(FlutterError(code: "INVALID_ARGS", message: "modelPath required", details: nil))
+            return
+        }
+
+        let modelPath: String
+        if let resolved = resolveBundledAssetPath(modelPathArg) {
+            modelPath = resolved
+        } else {
+            modelPath = modelPathArg
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try OnnxRuntimeManager.shared.loadSTTModel(modelPath: modelPath)
+                DispatchQueue.main.async {
+                    result(true)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "LOAD_ERROR", message: "Failed to load STT model: \(error.localizedDescription)", details: nil))
+                }
+            }
+        }
     }
 
     private func handleUnloadSTTModel(result: @escaping FlutterResult) {
+        OnnxRuntimeManager.shared.unloadSTTModel()
         result(true)
     }
 
     private func handleRecognizeSTT(call: FlutterMethodCall, result: @escaping FlutterResult) {
-        result(runtimeUnavailableError("STT"))
+        guard let args = call.arguments as? [String: Any],
+              let audioData = args["audioData"] as? FlutterStandardTypedData else {
+            result(FlutterError(code: "INVALID_ARGS", message: "audioData required", details: nil))
+            return
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let (text, confidence, language) = try OnnxRuntimeManager.shared.recognizeSTT(audioData: audioData.data)
+                DispatchQueue.main.async {
+                    result([
+                        "text": text,
+                        "confidence": confidence,
+                        "language": language
+                    ])
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "INFERENCE_ERROR", message: "STT inference not yet fully implemented on iOS", details: nil))
+                }
+            }
+        }
     }
 
+    // MARK: - OCR
+
     private func handleLoadOCRModel(call: FlutterMethodCall, result: @escaping FlutterResult) {
-        result(runtimeUnavailableError("OCR"))
+        guard let args = call.arguments as? [String: Any],
+              let modelPathArg = args["modelPath"] as? String else {
+            result(FlutterError(code: "INVALID_ARGS", message: "modelPath required", details: nil))
+            return
+        }
+
+        let modelPath: String
+        if let resolved = resolveBundledAssetPath(modelPathArg) {
+            modelPath = resolved
+        } else {
+            modelPath = modelPathArg
+        }
+
+        // Resolve character dictionary path
+        let charDictPath: String?
+        let modelDir = (modelPath as NSString).deletingLastPathComponent
+        let dictPath = (modelDir as NSString).appendingPathComponent("ppocr_keys_v1.txt")
+        if FileManager.default.fileExists(atPath: dictPath) {
+            charDictPath = dictPath
+        } else if let resolved = resolveBundledAssetPath("assets/models/ocr/ppocr_keys_v1.txt") {
+            charDictPath = resolved
+        } else {
+            charDictPath = nil
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try OnnxRuntimeManager.shared.loadOCRModel(
+                    modelPath: modelPath,
+                    charDictPath: charDictPath
+                )
+                DispatchQueue.main.async {
+                    result(true)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "LOAD_ERROR", message: "Failed to load OCR model: \(error.localizedDescription)", details: nil))
+                }
+            }
+        }
     }
 
     private func handleUnloadOCRModel(result: @escaping FlutterResult) {
+        OnnxRuntimeManager.shared.unloadOCRModel()
         result(true)
     }
 
     private func handleRecognizeOCR(call: FlutterMethodCall, result: @escaping FlutterResult) {
-        result(runtimeUnavailableError("OCR"))
+        guard let args = call.arguments as? [String: Any],
+              let imageData = args["imageData"] as? FlutterStandardTypedData else {
+            result(FlutterError(code: "INVALID_ARGS", message: "imageData required", details: nil))
+            return
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let (text, confidence) = try OnnxRuntimeManager.shared.recognizeOCR(imageData: imageData.data)
+                DispatchQueue.main.async {
+                    result([
+                        "text": text,
+                        "confidence": confidence
+                    ])
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "INFERENCE_ERROR", message: "OCR inference failed: \(error.localizedDescription)", details: nil))
+                }
+            }
+        }
     }
 
     // MARK: - LLM (native llama bridge)

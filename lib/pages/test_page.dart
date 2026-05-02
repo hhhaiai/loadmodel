@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../app/navigation_controller.dart';
 import '../model_loader.dart';
 import '../models/conversation_entry.dart';
 import '../models/content_block.dart';
@@ -55,6 +56,11 @@ class _TestPageState extends State<TestPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => appNavigationController.navigateTo(0),
+          tooltip: '返回',
+        ),
         title: const Text('测试'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),

@@ -400,13 +400,28 @@ UI 设计原则：
 - 移动端 LLM 已稳定采用 MethodChannel + 原生桥接，不再依赖 `127.0.0.1` HTTP 服务。
 - App 已具备导航壳层：状态、加载、对话、测试、模型、设置六个页面。
 
-### 5.2 质量信号（2026-04-28）
+### 5.2 质量信号（2026-05-02）
 
 - `flutter analyze`：通过（No issues）
-- `flutter test`：通过（`00:12 +504: All tests passed!`）
-- 最近一次 `flutter test --coverage` 实测：`60.46%`（`1861/3078`，2026-03-22）
-- `flutter build apk --debug`：通过（`✓ Built build/app/outputs/flutter-apk/app-debug.apk`，2026-04-28）
-- `flutter build ios --release --no-codesign`：通过（历史验证）
+- `flutter test`：通过（`00:14 +504: All tests passed!`）
+- 最近一次 `flutter test --coverage` 实测：`64.2%`（`2075/3232`，2026-05-02）
+- `flutter build apk --debug`：通过（`✓ Built build/app/outputs/flutter-apk/app-debug.apk`，2026-05-02）
+- `flutter build ios --release --no-codesign`：通过（`✓ Built build/ios/iphoneos/Runner.app`，2026-05-02）
+- 2026-05-02 本轮代码变更：
+  - **iOS ONNX Runtime 真实推理集成**：Embedding/OCR 可用，STT 会话加载 + 明确错误
+  - 新增 `ios/Runner/OnnxRuntimeManager.swift`（397 行）：ONNX Runtime 会话管理器
+    - CoreML EP 优先，CPU 回退
+    - Embedding：WordPiece tokenize + 3 输入张量 + 384 维输出
+    - OCR：图片解码/缩放 48×320/归一化 + ONNX 推理 + CTC 贪心解码
+    - STT：会话加载成功，推理返回明确错误（与 Android 对齐）
+  - `ios/Podfile`：新增 `onnxruntime-objc` 依赖
+  - `ios/Runner/ModelLoaderPlugin.swift`：替换所有 `RUNTIME_NOT_AVAILABLE` 占位为真实实现
+  - `lib/app/navigation_controller.dart`：全局导航控制器，支持跨页面导航
+  - `lib/app/app_shell.dart`：接入全局导航控制器
+  - `lib/pages/conversation_shell.dart`：新增返回按钮导航到状态页
+  - `lib/pages/test_page.dart`：新增返回按钮导航到状态页
+  - `android/app/src/main/cpp/llama_bridge.cpp`：增加 Android log 日志输出
+  - `scripts/download_ocr_model.sh`：更新为 paddle2onnx 转换流程
 - 2026-04-28 本轮新增 51 个测试（453→504），覆盖：
   - SettingsPage（8 tests）
   - StatusPage（6 tests）
@@ -660,19 +675,21 @@ UI 设计原则：
 | 4. AI 出问题不能拖垮 UI，点击和反馈要灵敏 | 部分实现 | 当前对话是异步流式；发送后会立即清空输入框、用户消息立即上屏、按钮保持 `发送` 文案但进入禁用态、机器人区域显示一次静态 `正在生成中...`；用户还可手动清空旧对话并中断当前生成；Android 真机页面切换和模型加载页导航稳定 | 还没有长时间压力测试、卡顿采样和内存回归数据 |
 | 5. 所有功能必须独立，不能因为 AI 影响其他功能 | 部分实现 | LLM、Embedding、OCR、STT、TTS 运行时已分层；OCR/STT 假成功已被拦截，不会再伪装成正常结果 | 还缺完整的跨功能回归矩阵，尤其是真机上的非 AI 功能联测 |
 
-### 5.7 最新真机验证结论（2026-03-22）
+### 5.7 最新真机验证结论（2026-05-02）
 
 当前**可以确认**的事实：
 
 1. 工程当前可以稳定完成：
    - `flutter analyze`
-   - `flutter test`
+   - `flutter test`（504/504 全绿，覆盖率 64.2%）
    - `flutter build apk --debug`
    - `flutter build ios --release --no-codesign`
-2. Android 真机在 2026-03-22 再次完成“安装 -> 清数据 -> 冷启动 -> 状态页渲染 -> 对话页打开”复验。
-3. Android 真机已经在历史实测中打通一次“安装 -> 启动 -> 加载 bundled GGUF -> 返回模型文本”主链路。
+2. Android 真机在 2026-03-22 再次完成”安装 -> 清数据 -> 冷启动 -> 状态页渲染 -> 对话页打开”复验。
+3. Android 真机已经在历史实测中打通一次”安装 -> 启动 -> 加载 bundled GGUF -> 返回模型文本”主链路。
 4. iOS 侧已经实测通过 Release 安装/启动基线，且当前仍可查询到安装状态。
 5. llama.cpp 的 iOS / Android 消息模板适配已完成，系统提示词与上下文链路已经接入。
+6. iOS ONNX Runtime 已真实集成：Embedding/OCR 可用，STT 会话加载+明确错误（2026-05-02 复验通过）。
+7. 全局导航控制器已建立，对话页/测试页新增返回按钮。
 
 当前**不能直接宣称**的事实：
 
@@ -698,10 +715,10 @@ UI 设计原则：
 | TaskScheduler | 部分实现 | 调度框架存在，但业务联动深度不足 |
 | LLM Runtime（Dart） | 部分实现 | 桌面/移动主链路可用，结构化流式事件已落地，后端能力仍需持续对齐 |
 | ONNX Flutter Runtime（Dart） | 部分实现 | Embedding 可用；OCR/STT 已具备防假成功保护；TTS 仍未实现 |
-| iOS 原生插件 | 部分实现 | 本地 LLM bridge 可用；OCR/STT 仍是占位/简化实现；TTS 未实现 |
-| Android 原生插件 | 部分实现 | 本地 LLM JNI bridge 可用；OCR 推理已实现（CTC decode + 字符字典，待真实模型验证）；STT 仍是占位；TTS 未实现 |
-| UI（加载/对话/测试/状态/设置） | 部分实现 | 设置持久化已实现；对话页与测试页已转向消息流展现；统一 UI 协议仍未完成 |
-| 测试体系 | 部分实现 | 单测基线已扩大到 453 个用例并全绿，覆盖率仍未达发布级 |
+| iOS 原生插件 | 部分实现 | 本地 LLM bridge 可用；ONNX Runtime 已集成（Embedding/OCR 真实推理可用，STT 会话加载+明确错误）；TTS 未实现 |
+| Android 原生插件 | 部分实现 | 本地 LLM JNI bridge 可用（增加 android log 日志）；OCR 推理已实现（CTC decode + 字符字典，待真实模型验证）；STT 仍是占位；TTS 未实现 |
+| UI（加载/对话/测试/状态/设置） | 部分实现 | 设置持久化已实现；对话页与测试页已转向消息流展现；全局导航控制器已建立；统一 UI 协议仍未完成 |
+| 测试体系 | 部分实现 | 单测基线 504 个用例全绿，覆盖率 64.2%（2075/3232），仍未达发布级 |
 | 多模态能力总线 | 规划中 | 仍需统一文本/视觉/语音/向量/Agent 能力入口 |
 | 插件化能力注册表 | 规划中 | 仍需定义模型插件、能力插件、工具插件协议 |
 | ChatGPT 风格统一 UI 壳层 | 部分实现 | `ConversationShell` 与 `TestPage` 已采用对话式承载，其他页面尚未统一到同一消息协议 |
@@ -774,6 +791,37 @@ UI 设计原则：
    - 新增 `assets/models/ocr/ppocr_keys_v1.txt`：中英文字符字典
    - 测试从 453 增长到 504（+51），新增 SettingsPage/StatusPage/ModelsPage/ConversationTimeline/ConversationEntry/ModelLoadPage 扩展测试。
 
+14. **iOS ONNX Runtime 集成完成（2026-05-01，2026-05-02 复验）**
+   - `ios/Podfile`：新增 `pod 'onnxruntime-objc', '~> 1.16.0'` 依赖
+   - 新增 `ios/Runner/OnnxRuntimeManager.swift`（397 行）：ONNX Runtime 会话管理器
+     - `ORTEnv` 全局环境初始化
+     - `createSession()`：创建 ORT 会话，尝试 CoreML EP，失败回退 CPU
+     - Embedding：WordPiece tokenize + 3 输入张量 + 384 维输出提取
+     - OCR：图片解码/缩放/归一化 + ONNX 推理 + CTC 贪心解码
+     - STT：会话加载成功，推理返回明确错误（与 Android 对齐）
+   - `ios/Runner/ModelLoaderPlugin.swift`：替换所有 `RUNTIME_NOT_AVAILABLE` 占位
+     - `handleLoadEmbeddingModel` / `handleGetEmbedding`：调用 OnnxRuntimeManager 实现真实推理
+     - `handleLoadOCRModel` / `handleRecognizeOCR`：调用 OnnxRuntimeManager 实现真实推理
+     - `handleLoadSTTModel` / `handleRecognizeSTT`：加载会话 + 明确错误提示
+   - `ios/Runner.xcodeproj/project.pbxproj`：添加 OnnxRuntimeManager.swift 到编译列表
+   - 验证结果（2026-05-02 复验）：
+     - `flutter analyze`：通过（No issues found!）
+     - `flutter test`：通过（00:14 +504: All tests passed!）
+     - `flutter build ios --release --no-codesign`：通过（✓ Built build/ios/iphoneos/Runner.app）
+
+15. **全局导航控制器 + 页面返回按钮（2026-05-02）**
+   - 新增 `lib/app/navigation_controller.dart`：`AppNavigationController` 全局导航控制器
+   - `lib/app/app_shell.dart`：接入全局导航控制器，支持跨页面程序化导航
+   - `lib/pages/conversation_shell.dart`：新增返回按钮，点击导航到状态页
+   - `lib/pages/test_page.dart`：新增返回按钮，点击导航到状态页
+   - `android/app/src/main/cpp/llama_bridge.cpp`：增加 `__android_log_print` 日志，覆盖模型加载全流程
+   - `scripts/download_ocr_model.sh`：更新为 paddle2onnx 转换流程（需 `paddlepaddle` + `paddle2onnx`）
+   - 验证结果：
+     - `flutter analyze`：通过
+     - `flutter test`：通过（504/504）
+     - `flutter build apk --debug`：通过
+     - `flutter build ios --release --no-codesign`：通过
+
 ### 5.8 当前工程使用方法（2026-03-22）
 
 以下流程是目录扁平化后的**标准使用方式**，新会话默认按这个顺序执行：
@@ -845,9 +893,9 @@ UI 设计原则：
 
 ## 8. 当前仍未完成的关键事项
 
-1. **移动端 OCR/STT 真实推理链路仍未打通**
-   - Android/iOS 原生侧仍保留占位或简化实现。
-   - 当前已做的是“显式报不可用”，不是“真正可用”。
+1. **移动端 STT 真实推理链路仍未打通**
+   - Android 仍是占位实现，iOS 已加载会话但推理返回明确错误。
+   - OCR 已在双端实现真实推理（Android CTC decode + iOS ONNX Runtime），待真实模型端到端验证。
 
 2. **TTS 运行时仍未实现**
    - Android/iOS 仍返回 `NOT_IMPLEMENTED`。
@@ -953,7 +1001,7 @@ UI 设计原则：
 ## 11. 验收标准（DoD）与当前对照
 
 1. `flutter test` 全绿，且具备有效业务测试
-   - 当前：`已满足`（`453/453`）
+   - 当前：`已满足`（`504/504`，覆盖率 64.2%）
 
 2. `flutter analyze` 无 warning
    - 当前：`已满足`
@@ -968,7 +1016,7 @@ UI 设计原则：
    - 当前：`部分满足`
 
 6. Android/iOS OCR/STT 至少一个真实模型端到端通过
-   - 当前：`部分满足`（Android 原生 OCR 推理代码已实现：bitmap→float→ONNX→CTC decode→文本；字符字典已包含；待下载真实 ONNX 模型后端到端验证）
+   - 当前：`部分满足`（Android/iOS 双端 OCR 推理代码已实现：bitmap→float→ONNX→CTC decode→文本；iOS 通过 OnnxRuntimeManager 实现真实 ONNX 推理；字符字典双端已包含；待下载真实 ONNX 模型后端到端验证）
 
 7. 移动端 LLM 端内可运行（无外部 HTTP 依赖）
    - 当前：`已满足`
@@ -986,9 +1034,9 @@ UI 设计原则：
 
 ## 12. 风险清单（当前）
 
-1. OCR/STT 仍未达到真实推理可用强度，当前只是避免误报成功。
+1. STT 仍未达到真实推理可用强度；OCR 双端已有真实推理代码，待真实模型端到端验证。
 2. TTS 仍未实现，若继续暴露入口会持续制造错误预期。
-3. 覆盖率不足，复杂回归仍有较高风险。
+3. 覆盖率 64.2%，距离 70% 目标仍有差距，复杂回归仍有较高风险。
 4. 多模态结果尚未统一消息协议，UI 仍有碎片化风险。
 5. ModelManager 若不补齐一致性链路，后续大模型安装/升级风险较高。
 6. 多模型格式目标范围较大，若缺插件协议会持续挤压核心层边界。
@@ -1029,10 +1077,9 @@ UI 设计原则：
 
 下一阶段应聚焦：
 
-- 流式事件统一
-- 设置持久化
-- OCR/STT 真实推理
-- 覆盖率提升
+- STT 真实推理链路打通
+- OCR 真实模型端到端验证
+- 覆盖率提升到 70%+
 - 主文件拆分
 - 统一 ChatGPT 风格 UI 壳层
 - 多模态能力抽象与插件化协议落地

@@ -6,6 +6,7 @@ import '../pages/models_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/status_page.dart';
 import '../pages/test_page.dart';
+import 'navigation_controller.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key, this.pages});
@@ -38,6 +39,26 @@ class _AppShellState extends State<AppShell> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    appNavigationController.addListener(_onNavigationChanged);
+  }
+
+  @override
+  void dispose() {
+    appNavigationController.removeListener(_onNavigationChanged);
+    super.dispose();
+  }
+
+  void _onNavigationChanged() {
+    if (mounted && appNavigationController.selectedIndex != _selectedIndex) {
+      setState(() {
+        _selectedIndex = appNavigationController.selectedIndex;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final pages = widget.pages ?? _defaultPages;
     assert(
@@ -50,7 +71,7 @@ class _AppShellState extends State<AppShell> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: (index) {
-          setState(() => _selectedIndex = index);
+          appNavigationController.navigateTo(index);
         },
         destinations: _destinations,
       ),
