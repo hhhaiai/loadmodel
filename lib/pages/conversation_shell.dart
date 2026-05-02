@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../app/navigation_controller.dart';
 import '../core/conversation_controller.dart';
 import '../widgets/conversation_timeline.dart';
 
@@ -32,10 +33,19 @@ class _ConversationShellState extends State<ConversationShell> {
     _controller.send(input);
   }
 
+  void _switchToStatusPage() {
+    appNavigationController.navigateTo(0);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: _switchToStatusPage,
+          tooltip: '返回',
+        ),
         title: const Text('对话'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [

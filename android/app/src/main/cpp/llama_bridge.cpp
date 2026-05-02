@@ -1,11 +1,16 @@
 #include "llama_bridge.h"
 
+#include <android/log.h>
 #include <algorithm>
 #include <cstdint>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
+
+#define BRIDGE_LOG_TAG "ModelLoaderBridge"
+#define BRIDGE_LOGI(...) __android_log_print(ANDROID_LOG_INFO, BRIDGE_LOG_TAG, __VA_ARGS__)
+#define BRIDGE_LOGE(...) __android_log_print(ANDROID_LOG_ERROR, BRIDGE_LOG_TAG, __VA_ARGS__)
 
 namespace model_loader {
 
@@ -241,19 +246,28 @@ std::string generate_from_prompt_locked(
 bool load_model(const std::string& model_path, const LoadParams& params) {
   std::lock_guard<std::mutex> lock(g_state.mutex);
 
+  BRIDGE_LOGI("load_model called: path=%s, ctx=%d, threads=%d, gpu_layers=%d, use_gpu=%d",
+      model_path.c_str(), params.context_length, params.threads, params.gpu_layers, params.use_gpu);
+
   free_all_locked();
 
+  BRIDGE_LOGI("Calling ggml_backend_load_all()");
   ggml_backend_load_all();
+  BRIDGE_LOGI("Calling llama_backend_init()");
   llama_backend_init();
 
   auto model_params = llama_model_default_params();
   model_params.n_gpu_layers = params.use_gpu ? std::max(0, params.gpu_layers) : 0;
+  BRIDGE_LOGI("n_gpu_layers=%d", model_params.n_gpu_layers);
 
+  BRIDGE_LOGI("Calling llama_model_load_from_file...");
   g_state.model = llama_model_load_from_file(model_path.c_str(), model_params);
   if (g_state.model == nullptr) {
+    BRIDGE_LOGE("llama_model_load_from_file returned NULL");
     free_all_locked();
     return false;
   }
+  BRIDGE_LOGI("Model loaded successfully");
 
   auto ctx_params = llama_context_default_params();
   const int trained_ctx = llama_model_n_ctx_train(g_state.model);
@@ -269,16 +283,23 @@ bool load_model(const std::string& model_path, const LoadParams& params) {
   ctx_params.n_threads = effective_threads;
   ctx_params.n_threads_batch = effective_threads;
 
+  BRIDGE_LOGI("Creating context: n_ctx=%d, n_batch=%d, n_threads=%d",
+      ctx_params.n_ctx, ctx_params.n_batch, ctx_params.n_threads);
   g_state.context = llama_init_from_model(g_state.model, ctx_params);
   if (g_state.context == nullptr) {
+    BRIDGE_LOGE("llama_init_from_model returned NULL");
     free_all_locked();
     return false;
   }
+  BRIDGE_LOGI("Context created successfully");
 
   g_state.vocab = llama_model_get_vocab(g_state.model);
   reset_sampler_locked();
 
-  return g_state.sampler != nullptr && g_state.vocab != nullptr;
+  const bool ok = g_state.sampler != nullptr && g_state.vocab != nullptr;
+  BRIDGE_LOGI("load_model result: sampler=%p, vocab=%p, ok=%d",
+      (void*)g_state.sampler, (void*)g_state.vocab, ok ? 1 : 0);
+  return ok;
 }
 
 void unload_model() {
