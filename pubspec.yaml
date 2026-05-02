@@ -49,8 +49,12 @@ flutter:
     # STT/OCR local assets
     - assets/models/whisper/model.onnx
     - assets/models/whisper/model_config.json
+    - assets/models/whisper/vocab.json
+    - assets/models/whisper/onnx/encoder_model.onnx
+    - assets/models/whisper/onnx/decoder_model_merged.onnx
     - assets/models/ocr/model.onnx
     - assets/models/ocr/model_config.json
+    - assets/models/ocr/ppocr_keys_v1.txt
 
   # To add assets to your application, add an assets section, like this:
   # assets:
