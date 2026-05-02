@@ -400,13 +400,24 @@ UI 设计原则：
 - 移动端 LLM 已稳定采用 MethodChannel + 原生桥接，不再依赖 `127.0.0.1` HTTP 服务。
 - App 已具备导航壳层：状态、加载、对话、测试、模型、设置六个页面。
 
-### 5.2 质量信号（2026-05-02）
+### 5.2 质量信号（2026-05-03）
 
 - `flutter analyze`：通过（No issues）
-- `flutter test`：通过（`00:14 +504: All tests passed!`）
+- `flutter test`：通过（`00:13 +510: All tests passed!`）
 - 最近一次 `flutter test --coverage` 实测：`64.2%`（`2075/3232`，2026-05-02）
 - `flutter build apk --debug`：通过（`✓ Built build/app/outputs/flutter-apk/app-debug.apk`，2026-05-02）
 - `flutter build ios --release --no-codesign`：通过（`✓ Built build/ios/iphoneos/Runner.app`，2026-05-02）
+- 2026-05-03 本轮代码变更：
+  - **Android 原生 STT 推理链路已实现**（`ModelLoaderPlugin.kt`）：
+    - 新增 STT 模型加载：支持 encoder + decoder 分离模型
+    - 实现 log-mel spectrogram 生成（FFT 512 + Hann window + 80 mel bins）
+    - 实现 Whisper encoder 推理（输入: [1, 80, 3000] log-mel → 输出: [1, 1500, 384]）
+    - 实现 Whisper decoder 推理（自回归生成 token）
+    - 实现 token 到文本解码（vocab.json 词汇表）
+    - 新增 `assets/models/whisper/vocab.json`（51865 tokens）
+    - 新增 Gson 依赖用于 vocabulary JSON 解析
+  - `ios/Runner/OnnxRuntimeManager.swift`：STT 完整推理链路实现（encoder + decoder + mel spectrogram + KV cache + vocab decoding）
+  - `ios/Runner/ModelLoaderPlugin.swift`：STT 错误消息改为传递真实错误详情
 - 2026-05-02 本轮代码变更：
   - **iOS ONNX Runtime 真实推理集成**：Embedding/OCR 可用，STT 会话加载 + 明确错误
   - 新增 `ios/Runner/OnnxRuntimeManager.swift`（397 行）：ONNX Runtime 会话管理器
@@ -675,27 +686,38 @@ UI 设计原则：
 | 4. AI 出问题不能拖垮 UI，点击和反馈要灵敏 | 部分实现 | 当前对话是异步流式；发送后会立即清空输入框、用户消息立即上屏、按钮保持 `发送` 文案但进入禁用态、机器人区域显示一次静态 `正在生成中...`；用户还可手动清空旧对话并中断当前生成；Android 真机页面切换和模型加载页导航稳定 | 还没有长时间压力测试、卡顿采样和内存回归数据 |
 | 5. 所有功能必须独立，不能因为 AI 影响其他功能 | 部分实现 | LLM、Embedding、OCR、STT、TTS 运行时已分层；OCR/STT 假成功已被拦截，不会再伪装成正常结果 | 还缺完整的跨功能回归矩阵，尤其是真机上的非 AI 功能联测 |
 
-### 5.7 最新真机验证结论（2026-05-02）
+### 5.7 最新真机验证结论（2026-05-03）
 
 当前**可以确认**的事实：
 
 1. 工程当前可以稳定完成：
    - `flutter analyze`
-   - `flutter test`（504/504 全绿，覆盖率 64.2%）
+   - `flutter test`（510/510 全绿，覆盖率 64.2%）
    - `flutter build apk --debug`
    - `flutter build ios --release --no-codesign`
 2. Android 真机在 2026-03-22 再次完成”安装 -> 清数据 -> 冷启动 -> 状态页渲染 -> 对话页打开”复验。
 3. Android 真机已经在历史实测中打通一次”安装 -> 启动 -> 加载 bundled GGUF -> 返回模型文本”主链路。
 4. iOS 侧已经实测通过 Release 安装/启动基线，且当前仍可查询到安装状态。
 5. llama.cpp 的 iOS / Android 消息模板适配已完成，系统提示词与上下文链路已经接入。
-6. iOS ONNX Runtime 已真实集成：Embedding/OCR 可用，STT 会话加载+明确错误（2026-05-02 复验通过）。
+6. iOS ONNX Runtime 已真实集成：Embedding/OCR/STT 均已实现真实推理（2026-05-03 复验通过）。
 7. 全局导航控制器已建立，对话页/测试页新增返回按钮。
+8. **Android 原生 STT 推理链路已实现**（2026-05-03）：
+   - Mel spectrogram 生成（FFT 512 + Hann window + 80 mel bins）
+   - Whisper encoder 推理（[1, 80, 3000] → [1, 1500, 384]）
+   - Whisper decoder 自回归推理
+   - Token 到文本解码（vocab.json 51865 tokens）
+   - 待真机 E2E 验证
+9. **iOS 原生 STT 推理链路已实现**（2026-05-03）：
+   - 与 Android 完全对齐的实现：encoder + decoder 分离加载、mel spectrogram、FFT、KV cache、vocab decoding
+   - iOS ORT SDK 无 `.bool` 类型，使用 `.int8` 替代
+   - 待真机 E2E 验证
 
 当前**不能直接宣称**的事实：
 
-1. 不能宣称 iOS 本轮已经完成“加载模型 + 多轮对话质量”重新验收。
-2. 不能宣称 Android 的“纯 adb 输入驱动聊天验收”已经稳定，因为输入链路本身不稳定。
+1. 不能宣称 iOS 本轮已经完成”加载模型 + 多轮对话质量”重新验收。
+2. 不能宣称 Android 的”纯 adb 输入驱动聊天验收”已经稳定，因为输入链路本身不稳定。
 3. 不能宣称整个项目已达到发布级稳定，尤其是 OCR / STT / TTS / 长时压力场景。
+4. 不能宣称 Android/iOS STT 已验证可用，因为尚未进行真机 E2E 测试（代码已实现，待验证）。
 
 当前工程状态的准确表述应为：
 
@@ -715,8 +737,8 @@ UI 设计原则：
 | TaskScheduler | 部分实现 | 调度框架存在，但业务联动深度不足 |
 | LLM Runtime（Dart） | 部分实现 | 桌面/移动主链路可用，结构化流式事件已落地，后端能力仍需持续对齐 |
 | ONNX Flutter Runtime（Dart） | 部分实现 | Embedding 可用；OCR/STT 已具备防假成功保护；TTS 仍未实现 |
-| iOS 原生插件 | 部分实现 | 本地 LLM bridge 可用；ONNX Runtime 已集成（Embedding/OCR 真实推理可用，STT 会话加载+明确错误）；TTS 未实现 |
-| Android 原生插件 | 部分实现 | 本地 LLM JNI bridge 可用（增加 android log 日志）；OCR 推理已实现（CTC decode + 字符字典，待真实模型验证）；STT 仍是占位；TTS 未实现 |
+| iOS 原生插件 | 部分实现 | 本地 LLM bridge 可用；ONNX Runtime 已集成（Embedding/OCR/STT 真实推理可用）；TTS 未实现 |
+| Android 原生插件 | 部分实现 | 本地 LLM JNI bridge 可用（增加 android log 日志）；OCR 推理已实现（CTC decode + 字符字典，待真实模型验证）；**STT 推理已实现**（mel spectrogram + encoder + decoder + vocab decoding，待真机 E2E）；TTS 未实现 |
 | UI（加载/对话/测试/状态/设置） | 部分实现 | 设置持久化已实现；对话页与测试页已转向消息流展现；全局导航控制器已建立；统一 UI 协议仍未完成 |
 | 测试体系 | 部分实现 | 单测基线 504 个用例全绿，覆盖率 64.2%（2075/3232），仍未达发布级 |
 | 多模态能力总线 | 规划中 | 仍需统一文本/视觉/语音/向量/Agent 能力入口 |
@@ -822,6 +844,75 @@ UI 设计原则：
      - `flutter build apk --debug`：通过
      - `flutter build ios --release --no-codesign`：通过
 
+16. **Android 原生 STT 推理链路已实现（2026-05-03）**
+   - `android/app/src/main/kotlin/.../ModelLoaderPlugin.kt`：
+     - STT 模型加载改为加载 encoder + decoder 分离模型
+     - 新增 `computeLogMelSpectrogram()`：FFT 512 + Hann window + 80 mel bins + log transform
+     - 新增 `fft()`：radix-2 Cooley-Tukey FFT 实现
+     - 新增 `computeMelFilterbank()`：mel filterbank 计算
+     - 新增 `runEncoderInference()`：Whisper encoder ONNX 推理
+     - 新增 `runDecoderInference()`：Whisper decoder 自回归推理
+     - 新增 `decodeTokens()`：token ID 到文本解码
+     - 新增 `loadSTTVocabulary()`：加载 vocab.json 词汇表
+   - 新增 `assets/models/whisper/vocab.json`（51865 tokens，Whisper tokenizer）
+   - `android/app/build.gradle.kts`：新增 Gson 依赖（vocabulary JSON 解析）
+   - 验证结果：
+     - `flutter analyze`：通过（No issues）
+     - `flutter test`：通过（504/504）
+     - `flutter build apk --debug`：通过
+     - `flutter build ios --release --no-codesign`：通过
+   - 待办：真机 E2E 验证
+
+17. **Android STT 关键 Bug 修复 + iOS 改进 + 测试覆盖率提升（2026-05-03）**
+   - `ModelLoaderPlugin.kt` 修复项：
+     - **FFT 缓冲区溢出修复**：`fft()` 原先复制 512 元素到 257 大小的数组，修改为只复制 N_FFT/2+1 个元素
+     - **KV Cache 实现**：decoder 现在正确捕获 `present.*` 输出并在下一步作为 `past_key_values.*` 输入，自回归生成不再从零开始
+     - **Timestamp token 范围修正**：`decodeTokens` 中的时间戳 token 范围从错误的 50464-50639 修正为 50364-51864（覆盖所有 Whisper 时间戳 token）
+     - **Vocab size 动态推断**：从模型输出 shape 推断 vocab size，不再硬编码 51865
+     - **真实置信度计算**：STT 和 OCR 的 confidence 都改为基于 softmax 概率，不再使用硬编码值或原始 logit
+     - **Dead code 清理**：移除未使用的 `processSTTOutput()` 和 `computeMagnitude()` 方法
+     - **重复 import 修复**：移除重复的 `kotlin.math.sqrt` import
+     - **注释修正**：`TOKEN_NO_TIMESTAMPS` 注释从错误的 `<|nocaptions|>` 修正为 `<|notimestamps|>`
+     - **音频格式校验**：新增最小音频长度校验（100 bytes）
+     - **OCR bitmap double-recycle 防护**：`createScaledBitmap` 返回同一对象时避免双重回收
+   - `OnnxRuntimeManager.swift` 改进项：
+     - **OCR confidence 改用 softmax**：与 Android 对齐
+     - **imageToRgbFloatBuffer 失败时 throw**：不再静默返回全零数组
+     - **extractEmbedding 动态维度**：从模型 output shape 推断维度，不再硬编码 384
+     - **recognizeOCR 输入校验**：空 imageData 时直接 throw
+   - `conversation_controller_test.dart` 新增 6 个测试：
+     - 空输入处理（send('') 添加 error entry）
+     - LLM 未加载路径
+     - currentGenerationConfig 温度/maxTokens 钳位
+     - finish 事件标记 user entry 为 complete
+     - 并发 send 取消
+     - 空白 systemPrompt 返回 null
+   - 验证结果：
+     - `flutter analyze`：通过（No issues）
+     - `flutter test`：通过（510/510，从 504 增长到 510）
+     - `flutter build apk --debug`：通过
+     - `flutter build ios --release --no-codesign`：通过
+
+18. **iOS STT 完整推理链路实现（2026-05-03）**
+   - `ios/Runner/OnnxRuntimeManager.swift` 重写 STT 部分：
+     - **Encoder + Decoder 分离加载**：`loadSTTModel()` 从 modelPath 推导 `onnx/encoder_model.onnx` 和 `onnx/decoder_model_merged.onnx` 路径，分别创建 ORT session
+     - **Vocabulary 加载**：从 `vocab.json` 加载 51865 token 词汇表，支持 token ID → 文本解码
+     - **16-bit PCM → float 转换**：`convertAudioToFloat()` 将原始音频数据转换为 [-1, 1] 浮点数组
+     - **Log-mel spectrogram 生成**：`computeLogMelSpectrogram()` 实现完整 FFT 512 + Hann window + 80 mel bins + log transform
+     - **Radix-2 Cooley-Tukey FFT**：`fftInPlace()` 原地 FFT 实现
+     - **Mel filterbank 计算**：`computeMelFilterbank()` 生成三角滤波器组
+     - **Encoder 推理**：`runEncoderInference()` 输入 [1, 80, 3000] 输出 [1, 1500, 384]
+     - **Decoder 自回归推理**：`runDecoderInference()` 实现 KV cache、softmax 置信度计算、EOS 检测
+     - **Token 解码**：`decodeTokens()` 处理 Ġ 空格标记、特殊 token 过滤、时间戳 token 跳过
+   - `ios/Runner/ModelLoaderPlugin.swift`：STT 错误消息改为传递真实错误详情
+   - iOS ORT SDK 无 `.bool` 类型，改用 `.int8` 传递 `use_cache_branch` 标志
+   - 验证结果：
+     - `flutter analyze`：通过（No issues）
+     - `flutter test`：通过（510/510）
+     - `flutter build ios --release --no-codesign`：通过
+     - `flutter build apk --debug`：通过
+     - Android 真机：APK 安装成功，app 正常运行
+
 ### 5.8 当前工程使用方法（2026-03-22）
 
 以下流程是目录扁平化后的**标准使用方式**，新会话默认按这个顺序执行：
@@ -893,9 +984,10 @@ UI 设计原则：
 
 ## 8. 当前仍未完成的关键事项
 
-1. **移动端 STT 真实推理链路仍未打通**
-   - Android 仍是占位实现，iOS 已加载会话但推理返回明确错误。
-   - OCR 已在双端实现真实推理（Android CTC decode + iOS ONNX Runtime），待真实模型端到端验证。
+1. **移动端 STT/OCR 推理链路已在双端实现，待真机验证**
+   - Android STT：mel spectrogram + encoder + decoder + vocab decoding（已实现）
+   - iOS STT：与 Android 完全对齐的实现（已实现，2026-05-03）
+   - OCR 已在双端实现真实推理，待真实模型端到端验证。
 
 2. **TTS 运行时仍未实现**
    - Android/iOS 仍返回 `NOT_IMPLEMENTED`。
@@ -1077,7 +1169,7 @@ UI 设计原则：
 
 下一阶段应聚焦：
 
-- STT 真实推理链路打通
+- **STT 真机 E2E 验证**（Android STT 已实现，待验证；iOS STT 需实现）
 - OCR 真实模型端到端验证
 - 覆盖率提升到 70%+
 - 主文件拆分

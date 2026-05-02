@@ -323,7 +323,7 @@ public class ModelLoaderPlugin: NSObject, FlutterPlugin {
                 }
             } catch {
                 DispatchQueue.main.async {
-                    result(FlutterError(code: "INFERENCE_ERROR", message: "STT inference not yet fully implemented on iOS", details: nil))
+                    result(FlutterError(code: "INFERENCE_ERROR", message: "STT inference failed: \(error.localizedDescription)", details: nil))
                 }
             }
         }

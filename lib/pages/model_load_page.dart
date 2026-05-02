@@ -361,6 +361,17 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
                 );
                 break;
               }
+              // Also copy encoder, decoder, and vocab files for Whisper STT
+              final helper = AssetHelper();
+              await helper.loadAssetToCache(
+                'assets/models/whisper/onnx/encoder_model.onnx',
+              );
+              await helper.loadAssetToCache(
+                'assets/models/whisper/onnx/decoder_model_merged.onnx',
+              );
+              await helper.loadAssetToCache(
+                'assets/models/whisper/vocab.json',
+              );
               await ml.stt.loadModel(
                 STTConfig(modelPath: modelPath, language: 'auto'),
               );
