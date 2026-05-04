@@ -722,6 +722,10 @@ UI 设计原则：
     - Android CAMERA 权限 + iOS NSCameraUsageDescription/NSPhotoLibraryUsageDescription 已配置
     - 生产级审查通过：mounted 检查、10MB 限制、异常处理、Image.memory errorBuilder
     - 测试 740/740 全绿
+12. **ModelLoadPage 已统一到 ConversationTimeline + ContentBlock 协议**（2026-05-04）：
+    - 加载结果从单一 `_status` 字符串改为 `List<ConversationEntry>` 结构化消息
+    - 成功/错误/加载中分别使用 TextBlock/ErrorBlock/StatusBlock 展示
+    - 测试 740/740 全绿（无需修改即通过）
 
 当前**不能直接宣称**的事实：
 
@@ -754,7 +758,7 @@ UI 设计原则：
 | 测试体系 | 部分实现 | 单测基线 738 个用例全绿，覆盖率 72.0%（2026-05-04）|
 | 多模态能力总线 | 规划中 | 仍需统一文本/视觉/语音/向量/Agent 能力入口 |
 | 插件化能力注册表 | 规划中 | 仍需定义模型插件、能力插件、工具插件协议 |
-| ChatGPT 风格统一 UI 壳层 | 部分实现 | `ConversationShell` 与 `TestPage` 已采用对话式承载，其他页面尚未统一到同一消息协议 |
+| ChatGPT 风格统一 UI 壳层 | 部分实现 | `ConversationShell`、`TestPage`、`ModelLoadPage` 已采用对话式承载；`StatusPage`/`SettingsPage`/`ModelsPage` 为仪表盘/表单/目录页面，不需要对话式化 |
 
 ---
 
@@ -1046,6 +1050,26 @@ UI 设计原则：
       - `flutter build apk --debug`：通过
       - `flutter build ios --release --no-codesign`：通过
 
+25. **ModelLoadPage 统一到 ConversationTimeline + ContentBlock 协议（2026-05-04）**
+    - `lib/pages/model_load_page.dart`：完全重构状态显示
+      - `_status: String` → `_entries: List<ConversationEntry>`
+      - 状态 `Container` → `ConversationTimeline(entries: _entries)`
+      - 新增 `_appendEntry()` 和 `_removePendingStatus()` 辅助方法（与 test_page.dart 对齐）
+      - 加载结果改为 ContentBlock 结构化展示：
+        - 成功 → `TextBlock` + `MetricBlock`（assistant role）
+        - 错误 → `ErrorBlock`（error role，含 error code）
+        - 加载中 → `StatusBlock`（status role，isComplete: false）
+        - 运行时选择 → `MetricBlock`（threads/ctx/gpuLayers）
+      - `_buildLoadErrorStatus` 重构为 `_appendLoadError`，直接 append entry
+      - 表单区域（dropdown、按钮、runtime info card）保持不变
+    - 辅助函数（`buildMissingAssetStatus` 等）保持不变，纯文本单元测试无损
+    - 测试无需修改即通过（`find.textContaining(...)` 仍匹配 ErrorBlock 渲染的文本）
+    - 验证结果：
+      - `flutter analyze`：通过（No issues）
+      - `flutter test`：通过（740/740）
+      - `flutter build apk --debug`：通过
+      - `flutter build ios --release --no-codesign`：通过
+
 ### 5.8 当前工程使用方法（2026-03-22）
 
 以下流程是目录扁平化后的**标准使用方式**，新会话默认按这个顺序执行：
@@ -1127,9 +1151,9 @@ UI 设计原则：
    - iOS：AVSpeechSynthesizer 基础实现，通过扬声器播放（iOS 不支持直接文件输出，需 AVAudioEngine 才能实现文件输出）
    - Dart 层：`_TTSRuntimeImpl` 通过 MethodChannel 调用原生 TTS
 
-3. **统一 Chat UI 壳层只完成了第一阶段**
-   - 对话页、测试页已对话式化。
-   - 加载页、状态页、模型管理页仍未统一到同一消息/能力协议。
+3. **统一 Chat UI 壳层进展**
+   - 对话页、测试页、加载页已对话式化（ConversationTimeline + ContentBlock）。
+   - 状态页、设置页、模型管理页为仪表盘/表单/目录页面，不需要对话式化。
 
 4. **测试覆盖率仍偏低**
    - 当前约 `72.0%`，已超过 70% 目标，但复杂回归仍有风险。
@@ -1198,8 +1222,7 @@ UI 设计原则：
 
 4. ~~覆盖率已达标 72.0%~~ ✅ 已达成（2356/3272，2026-05-04）
 
-5. 继续统一 Chat UI 壳层
-   - 将加载/测试/状态等能力结果映射到同一消息协议
+5. ~~继续统一 Chat UI 壳层~~ ✅ 已完成（对话页、测试页、加载页已统一到 ConversationTimeline + ContentBlock；状态页/设置页/模型页为仪表盘/表单/目录，不需要对话式化）
 
 ### P1（MVP 完整度）
 

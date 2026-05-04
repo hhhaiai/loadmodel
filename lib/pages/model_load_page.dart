@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 
 import '../core/asset_helper.dart';
 import '../model_loader.dart';
+import '../models/conversation_entry.dart';
+import '../models/content_block.dart';
 import '../models/llm_model_catalog.dart';
 import '../models/model_type.dart';
 import '../runtime/embedding_runtime.dart';
@@ -13,6 +15,7 @@ import '../runtime/ocr_runtime.dart';
 import '../runtime/stt_runtime.dart';
 import '../models/model_loader_exception.dart';
 import '../utils/logger.dart';
+import '../widgets/conversation_timeline.dart';
 
 String buildMissingAssetStatus({
   required String modelDir,
@@ -72,7 +75,21 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
   String _selectedType = 'embedding';
   String _selectedLLMModel = LLMModelCatalog.defaultModelId;
   bool _isLoading = false;
-  String _status = '';
+  final List<ConversationEntry> _entries = [];
+
+  void _appendEntry(ConversationEntry entry) {
+    if (!mounted) return;
+    setState(() {
+      _entries.add(entry);
+    });
+  }
+
+  void _removePendingStatus() {
+    _entries.removeWhere(
+      (entry) =>
+          entry.role == ConversationEntryRole.status && !entry.isComplete,
+    );
+  }
 
   Future<bool> _isPlaceholderModelFile(String modelPath) async {
     try {
@@ -157,7 +174,7 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
             ],
             onChanged: (v) => setState(() {
               _selectedType = v!;
-              _status = '';
+              _entries.clear();
             }),
           ),
           const SizedBox(height: 16),
@@ -180,7 +197,7 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
                   }).toList(),
                   onChanged: (v) => setState(() {
                     _selectedLLMModel = v!;
-                    _status = '';
+                    _entries.clear();
                   }),
                 ),
                 const SizedBox(height: 16),
@@ -201,17 +218,19 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
             label: Text(_isLoading ? '加载中...' : '加载模型'),
           ),
           const SizedBox(height: 16),
-          if (_status.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.all(12),
+          SizedBox(
+            height: 300,
+            child: Container(
               decoration: BoxDecoration(
-                color: _status.contains('成功')
-                    ? Colors.green.shade100
-                    : Colors.red.shade100,
+                color: Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text(_status),
+              child: ConversationTimeline(
+                entries: _entries,
+                emptyStateText: '加载结果将显示在这里',
+              ),
             ),
+          ),
         ],
       ),
     );
@@ -272,7 +291,14 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
   Future<void> _loadModel() async {
     setState(() {
       _isLoading = true;
-      _status = '开始加载模型...';
+      _entries.clear();
+      _entries.add(
+        const ConversationEntry(
+          role: ConversationEntryRole.status,
+          text: '开始加载模型...',
+          isComplete: false,
+        ),
+      );
     });
 
     try {
@@ -299,11 +325,23 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
         );
         if (report != null) {
           logger.info('Load flow selection report: ${report.toJson()}');
-          _status =
-              '运行时选择: ${report.finalDecision.backend.name}/${report.finalDecision.provider.name}'
-              '\nthreads=${report.finalDecision.threads}, '
-              'ctx=${report.finalDecision.contextLength}, '
-              'gpuLayers=${report.finalDecision.gpuLayers}';
+          _appendEntry(
+            ConversationEntry(
+              role: ConversationEntryRole.assistant,
+              text: '',
+              contentBlocks: [
+                TextBlock(
+                  '运行时选择: ${report.finalDecision.backend.name}/${report.finalDecision.provider.name}',
+                ),
+                MetricBlock(
+                  '参数',
+                  'threads=${report.finalDecision.threads}, '
+                      'ctx=${report.finalDecision.contextLength}, '
+                      'gpuLayers=${report.finalDecision.gpuLayers}',
+                ),
+              ],
+            ),
+          );
         }
       }
 
@@ -331,17 +369,39 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
                   maxLength: 512,
                 ),
               );
-              _status = '✅ Embedding 模型加载成功 ($modelDir)';
+              _appendEntry(
+                ConversationEntry(
+                  role: ConversationEntryRole.assistant,
+                  text: '',
+                  contentBlocks: [
+                    TextBlock('✅ Embedding 模型加载成功 ($modelDir)'),
+                  ],
+                ),
+              );
             } else {
-              _status = buildMissingAssetStatus(
-                modelDir: modelDir,
-                taskLabel: 'Embedding',
-                requiredFiles: const ['model.onnx', 'tokenizer.json'],
+              _appendEntry(
+                ConversationEntry(
+                  role: ConversationEntryRole.error,
+                  text: '',
+                  contentBlocks: [
+                    ErrorBlock(
+                      buildMissingAssetStatus(
+                        modelDir: modelDir,
+                        taskLabel: 'Embedding',
+                        requiredFiles: const [
+                          'model.onnx',
+                          'tokenizer.json',
+                        ],
+                      ),
+                      code: 'MODEL_NOT_FOUND',
+                    ),
+                  ],
+                ),
               );
             }
           } catch (e, st) {
             logger.warning('Embedding asset load failed', e, st);
-            _status = _buildLoadErrorStatus(taskLabel: 'Embedding', error: e);
+            _appendLoadError(taskLabel: 'Embedding', error: e);
           }
           break;
 
@@ -354,14 +414,27 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
             if (assets.containsKey('modelPath')) {
               final modelPath = assets['modelPath']!;
               if (await _isPlaceholderModelFile(modelPath)) {
-                _status = buildMissingAssetStatus(
-                  modelDir: 'whisper',
-                  taskLabel: 'STT',
-                  requiredFiles: const ['model.onnx', 'model_config.json'],
+                _appendEntry(
+                  ConversationEntry(
+                    role: ConversationEntryRole.error,
+                    text: '',
+                    contentBlocks: [
+                      ErrorBlock(
+                        buildMissingAssetStatus(
+                          modelDir: 'whisper',
+                          taskLabel: 'STT',
+                          requiredFiles: const [
+                            'model.onnx',
+                            'model_config.json',
+                          ],
+                        ),
+                        code: 'MODEL_NOT_FOUND',
+                      ),
+                    ],
+                  ),
                 );
                 break;
               }
-              // Also copy encoder, decoder, and vocab files for Whisper STT
               final helper = AssetHelper();
               await helper.loadAssetToCache(
                 'assets/models/whisper/onnx/encoder_model.onnx',
@@ -375,17 +448,39 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
               await ml.stt.loadModel(
                 STTConfig(modelPath: modelPath, language: 'auto'),
               );
-              _status = '✅ STT 模型加载成功 (whisper)';
+              _appendEntry(
+                ConversationEntry(
+                  role: ConversationEntryRole.assistant,
+                  text: '',
+                  contentBlocks: [
+                    const TextBlock('✅ STT 模型加载成功 (whisper)'),
+                  ],
+                ),
+              );
             } else {
-              _status = buildMissingAssetStatus(
-                modelDir: 'whisper',
-                taskLabel: 'STT',
-                requiredFiles: const ['model.onnx', 'model_config.json'],
+              _appendEntry(
+                ConversationEntry(
+                  role: ConversationEntryRole.error,
+                  text: '',
+                  contentBlocks: [
+                    ErrorBlock(
+                      buildMissingAssetStatus(
+                        modelDir: 'whisper',
+                        taskLabel: 'STT',
+                        requiredFiles: const [
+                          'model.onnx',
+                          'model_config.json',
+                        ],
+                      ),
+                      code: 'MODEL_NOT_FOUND',
+                    ),
+                  ],
+                ),
               );
             }
           } catch (e, st) {
             logger.warning('STT load failed', e, st);
-            _status = _buildLoadErrorStatus(taskLabel: 'STT', error: e);
+            _appendLoadError(taskLabel: 'STT', error: e);
           }
           break;
 
@@ -398,27 +493,63 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
             if (assets.containsKey('modelPath')) {
               final modelPath = assets['modelPath']!;
               if (await _isPlaceholderModelFile(modelPath)) {
-                _status = buildMissingAssetStatus(
-                  modelDir: 'ocr',
-                  taskLabel: 'OCR',
-                  requiredFiles: const ['model.onnx', 'model_config.json'],
+                _appendEntry(
+                  ConversationEntry(
+                    role: ConversationEntryRole.error,
+                    text: '',
+                    contentBlocks: [
+                      ErrorBlock(
+                        buildMissingAssetStatus(
+                          modelDir: 'ocr',
+                          taskLabel: 'OCR',
+                          requiredFiles: const [
+                            'model.onnx',
+                            'model_config.json',
+                          ],
+                        ),
+                        code: 'MODEL_NOT_FOUND',
+                      ),
+                    ],
+                  ),
                 );
                 break;
               }
               await ml.ocr.loadModel(
                 OCRConfig(modelPath: modelPath, language: 'eng+chi_sim'),
               );
-              _status = '✅ OCR 模型加载成功 (ocr)';
+              _appendEntry(
+                ConversationEntry(
+                  role: ConversationEntryRole.assistant,
+                  text: '',
+                  contentBlocks: [
+                    const TextBlock('✅ OCR 模型加载成功 (ocr)'),
+                  ],
+                ),
+              );
             } else {
-              _status = buildMissingAssetStatus(
-                modelDir: 'ocr',
-                taskLabel: 'OCR',
-                requiredFiles: const ['model.onnx', 'model_config.json'],
+              _appendEntry(
+                ConversationEntry(
+                  role: ConversationEntryRole.error,
+                  text: '',
+                  contentBlocks: [
+                    ErrorBlock(
+                      buildMissingAssetStatus(
+                        modelDir: 'ocr',
+                        taskLabel: 'OCR',
+                        requiredFiles: const [
+                          'model.onnx',
+                          'model_config.json',
+                        ],
+                      ),
+                      code: 'MODEL_NOT_FOUND',
+                    ),
+                  ],
+                ),
               );
             }
           } catch (e, st) {
             logger.warning('OCR load failed', e, st);
-            _status = _buildLoadErrorStatus(taskLabel: 'OCR', error: e);
+            _appendLoadError(taskLabel: 'OCR', error: e);
           }
           break;
 
@@ -426,9 +557,20 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
           try {
             final selectedModel = LLMModelCatalog.getById(_selectedLLMModel);
             if (selectedModel == null || !selectedModel.isBundled) {
-              _status = buildRuntimeLoadFailedStatus(
-                taskLabel: 'LLM',
-                reason: '未找到可加载的 LLM 配置: $_selectedLLMModel',
+              _appendEntry(
+                ConversationEntry(
+                  role: ConversationEntryRole.error,
+                  text: '',
+                  contentBlocks: [
+                    ErrorBlock(
+                      buildRuntimeLoadFailedStatus(
+                        taskLabel: 'LLM',
+                        reason: '未找到可加载的 LLM 配置: $_selectedLLMModel',
+                      ),
+                      code: 'MODEL_LOAD_FAILED',
+                    ),
+                  ],
+                ),
               );
               break;
             }
@@ -444,49 +586,100 @@ class _ModelLoadPageState extends State<ModelLoadPage> {
               final report = resolved.selectionReport;
 
               await ml.llm.loadModel(llmConfig);
-              _status =
-                  '✅ LLM 模型加载成功!\n\n'
-                  '模型: ${selectedModel.successName}\n'
-                  '后端: ${report?.finalDecision.backend.name ?? 'unknown'}/'
-                  '${report?.finalDecision.provider.name ?? 'cpu'}\n'
-                  '上下文: ${llmConfig.contextLength}, 线程: ${llmConfig.threads ?? '-'}, '
-                  'GPU Layers: ${llmConfig.gpuLayers ?? 0}\n'
-                  '你可以到"测试"页面进行对话测试';
+              _appendEntry(
+                ConversationEntry(
+                  role: ConversationEntryRole.assistant,
+                  text: '',
+                  contentBlocks: [
+                    const TextBlock('✅ LLM 模型加载成功!'),
+                    MetricBlock('模型', selectedModel.successName),
+                    MetricBlock(
+                      '后端',
+                      '${report?.finalDecision.backend.name ?? 'unknown'}/'
+                          '${report?.finalDecision.provider.name ?? 'cpu'}',
+                    ),
+                    MetricBlock(
+                      '上下文',
+                      '${llmConfig.contextLength}',
+                    ),
+                    MetricBlock(
+                      '线程/GPU',
+                      '${llmConfig.threads ?? '-'}/${llmConfig.gpuLayers ?? 0}',
+                    ),
+                    const TextBlock('你可以到"测试"页面进行对话测试'),
+                  ],
+                ),
+              );
             } else {
-              _status = buildMissingLlmAssetStatus(
-                assetPath: selectedModel.assetPath!,
+              _appendEntry(
+                ConversationEntry(
+                  role: ConversationEntryRole.error,
+                  text: '',
+                  contentBlocks: [
+                    ErrorBlock(
+                      buildMissingLlmAssetStatus(
+                        assetPath: selectedModel.assetPath!,
+                      ),
+                      code: 'MODEL_NOT_FOUND',
+                    ),
+                  ],
+                ),
               );
             }
           } catch (e, st) {
             logger.warning('LLM load failed', e, st);
-            _status = _buildLoadErrorStatus(taskLabel: 'LLM', error: e);
+            _appendLoadError(taskLabel: 'LLM', error: e);
           }
           break;
       }
     } catch (e, st) {
       logger.warning('Model load flow failed', e, st);
-      _status = '❌ 加载失败，请稍后重试';
+      _appendEntry(
+        const ConversationEntry(
+          role: ConversationEntryRole.error,
+          text: '',
+          contentBlocks: [
+            ErrorBlock('❌ 加载失败，请稍后重试'),
+          ],
+        ),
+      );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _removePendingStatus();
+          _isLoading = false;
+        });
+      }
     }
   }
 
-  String _buildLoadErrorStatus({
+  void _appendLoadError({
     required String taskLabel,
     required Object error,
   }) {
+    final String message;
+    final String code;
     if (error is PlatformException &&
         (error.code == 'RUNTIME_NOT_AVAILABLE' ||
             error.code == 'NOT_IMPLEMENTED')) {
-      return buildRuntimeUnavailableStatus(
+      message = buildRuntimeUnavailableStatus(
         taskLabel: taskLabel,
         reason: error.message ?? error.toString(),
       );
+      code = 'RUNTIME_NOT_AVAILABLE';
+    } else {
+      message = buildRuntimeLoadFailedStatus(
+        taskLabel: taskLabel,
+        reason: error.toString(),
+      );
+      code = 'MODEL_LOAD_FAILED';
     }
-
-    return buildRuntimeLoadFailedStatus(
-      taskLabel: taskLabel,
-      reason: error.toString(),
+    _appendEntry(
+      ConversationEntry(
+        role: ConversationEntryRole.error,
+        text: '',
+        contentBlocks: [ErrorBlock(message, code: code)],
+      ),
     );
   }
 }
