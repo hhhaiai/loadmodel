@@ -683,40 +683,6 @@ class LLMStreamEvent {
   }
 }
 
-/// Non-streaming result (matches CLAUDE.md Section 5.4)
-class LLMResult {
-  /// Complete generated text
-  final String text;
-
-  /// Finish reason
-  final FinishReason finishReason;
-
-  /// Generation stats
-  final GenerationStats stats;
-
-  const LLMResult({
-    required this.text,
-    required this.finishReason,
-    required this.stats,
-  });
-
-  Map<String, dynamic> toJson() {
-    return {
-      'text': text,
-      'finishReason': finishReason.name,
-      'stats': stats.toJson(),
-    };
-  }
-
-  factory LLMResult.fromJson(Map<String, dynamic> json) {
-    return LLMResult(
-      text: json['text'] ?? '',
-      finishReason: FinishReasonExtension.fromString(json['finishReason'] ?? 'stop'),
-      stats: GenerationStats.fromJson(json['stats'] ?? {}),
-    );
-  }
-}
-
 /// Stop strings matcher (Section 5.3)
 /// Handles cross-chunk matching
 class StopStringsMatcher {
