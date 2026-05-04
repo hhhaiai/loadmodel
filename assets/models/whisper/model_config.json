@@ -1,7 +1,51 @@
 {
-  "model_id": "whisper-placeholder",
+  "model_id": "whisper-small",
   "family": "whisper",
   "format": "onnx",
   "file": "model.onnx",
-  "task": "stt"
+  "task": "stt",
+  "architecture": "Whisper",
+  "encoder": {
+    "file": "onnx/encoder_model.onnx",
+    "input": {
+      "name": "input_features",
+      "shape": [1, 80, 3000],
+      "dtype": "float32",
+      "note": "Log-mel spectrogram: 80 mel bins, 3000 frames (~30s at 16kHz)"
+    },
+    "output": {
+      "name": "last_hidden_state",
+      "shape": [1, 1500, 384],
+      "dtype": "float32"
+    }
+  },
+  "decoder": {
+    "file": "onnx/decoder_model_merged.onnx",
+    "input": {
+      "names": ["input_ids", "encoder_hidden_states", "use_cache_branch", "past_key_values.*"],
+      "input_ids_dtype": "int64",
+      "encoder_hidden_states_dtype": "float32",
+      "use_cache_branch_dtype": "bool",
+      "past_key_values_dtype": "float32",
+      "num_layers": 4,
+      "num_heads": 6,
+      "head_dim": 64
+    },
+    "output": {
+      "name": "logits",
+      "shape": ["seq", "vocab_size"],
+      "dtype": "float32",
+      "vocab_size": 51865
+    },
+    "special_tokens": {
+      "vocab_size": 51865,
+      "endoftext": 50257,
+      "startoftranscript": 50258,
+      "notimestamps": 50357,
+      "nocaptions": 50358,
+      "timestamp": 50359
+    }
+  },
+  "vocab": "vocab.json",
+  "note": "Whisper small model. mel spectrogram: FFT 512, window 400, hop 160, 80 mel bins. Timestamps range 50364-51864."
 }

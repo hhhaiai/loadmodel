@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../app/navigation_controller.dart';
 import '../model_loader.dart';
@@ -45,11 +46,49 @@ class _TestPageState extends State<TestPage> {
   final List<ConversationEntry> _entries = [];
   bool _isRunning = false;
   String _selectedType = 'embedding';
+  Uint8List? _selectedImageBytes;
+  final _imagePicker = ImagePicker();
 
   @override
   void dispose() {
     _inputController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: source,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 95,
+      );
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      if (!mounted) return;
+      if (bytes.lengthInBytes > 10 * 1024 * 1024) {
+        _appendEntry(
+          const ConversationEntry(
+            role: ConversationEntryRole.error,
+            text: '图片过大（超过 10MB），请选择较小的图片',
+          ),
+        );
+        return;
+      }
+      setState(() => _selectedImageBytes = bytes);
+    } catch (e) {
+      logger.warning('Failed to pick image: $source', e);
+      if (!mounted) return;
+      final message = e is PlatformException
+          ? '无法获取图片，请检查权限设置'
+          : '无法获取图片';
+      _appendEntry(
+        ConversationEntry(
+          role: ConversationEntryRole.error,
+          text: message,
+        ),
+      );
+    }
   }
 
   @override
@@ -83,24 +122,83 @@ class _TestPageState extends State<TestPage> {
                 DropdownMenuItem(value: 'stt', child: Text('🎤 STT')),
                 DropdownMenuItem(value: 'ocr', child: Text('📷 OCR')),
               ],
-              onChanged: (v) => setState(() => _selectedType = v!),
+              onChanged: (v) {
+                setState(() {
+                  _selectedType = v!;
+                  if (v != 'ocr') _selectedImageBytes = null;
+                });
+              },
             ),
             const SizedBox(height: 16),
+            // OCR 图片选择区域
+            if (_selectedType == 'ocr') ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      key: const Key('ocr_camera_button'),
+                      onPressed: _isRunning
+                          ? null
+                          : () => _pickImage(ImageSource.camera),
+                      icon: const Icon(Icons.camera_alt),
+                      label: const Text('拍照识别'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      key: const Key('ocr_gallery_button'),
+                      onPressed: _isRunning
+                          ? null
+                          : () => _pickImage(ImageSource.gallery),
+                      icon: const Icon(Icons.photo_library),
+                      label: const Text('选择图片'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              // 图片预览
+              Container(
+                height: 120,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: _selectedImageBytes != null
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.memory(
+                          _selectedImageBytes!,
+                          fit: BoxFit.contain,
+                        ),
+                      )
+                    : const Center(
+                        child: Text(
+                          '请拍照或选择图片',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+              ),
+              const SizedBox(height: 16),
+            ],
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: TextField(
-                    key: const Key('test_input_field'),
-                    controller: _inputController,
-                    decoration: const InputDecoration(
-                      labelText: '输入',
-                      border: OutlineInputBorder(),
+                if (_selectedType != 'ocr')
+                  Expanded(
+                    child: TextField(
+                      key: const Key('test_input_field'),
+                      controller: _inputController,
+                      decoration: const InputDecoration(
+                        labelText: '输入',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 3,
                     ),
-                    maxLines: 3,
                   ),
-                ),
-                const SizedBox(width: 12),
+                if (_selectedType != 'ocr') const SizedBox(width: 12),
                 SizedBox(
                   height: 50,
                   child: ElevatedButton.icon(
@@ -113,7 +211,7 @@ class _TestPageState extends State<TestPage> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.send),
-                    label: Text(_isRunning ? '...' : '发送'),
+                    label: Text(_isRunning ? '...' : '识别'),
                   ),
                 ),
               ],
@@ -139,19 +237,6 @@ class _TestPageState extends State<TestPage> {
 
   Future<void> _runTest() async {
     final input = _inputController.text.trim();
-    if (input.isEmpty) {
-      _appendEntry(
-        const ConversationEntry(
-          role: ConversationEntryRole.error,
-          text: '请输入内容',
-        ),
-      );
-      return;
-    }
-
-    _appendEntry(
-      ConversationEntry(role: ConversationEntryRole.user, text: input),
-    );
 
     setState(() {
       _isRunning = true;
@@ -169,6 +254,18 @@ class _TestPageState extends State<TestPage> {
 
       switch (_selectedType) {
         case 'embedding':
+          if (input.isEmpty) {
+            _appendEntry(
+              const ConversationEntry(
+                role: ConversationEntryRole.error,
+                text: '请输入内容',
+              ),
+            );
+            return;
+          }
+          _appendEntry(
+            ConversationEntry(role: ConversationEntryRole.user, text: input),
+          );
           if (!ml.embedding.isLoaded) {
             _appendEntry(
               ConversationEntry(
@@ -195,6 +292,18 @@ class _TestPageState extends State<TestPage> {
           break;
 
         case 'stt':
+          if (input.isEmpty) {
+            _appendEntry(
+              const ConversationEntry(
+                role: ConversationEntryRole.error,
+                text: '请输入内容',
+              ),
+            );
+            return;
+          }
+          _appendEntry(
+            ConversationEntry(role: ConversationEntryRole.user, text: input),
+          );
           if (!ml.stt.isLoaded) {
             _appendEntry(
               ConversationEntry(
@@ -204,23 +313,32 @@ class _TestPageState extends State<TestPage> {
             );
             return;
           }
-          final fakePcm16 = Uint8List.fromList(List<int>.filled(3200, 0));
-          final result = await ml.stt.recognizeBytes(fakePcm16);
+          final sttAssetData =
+              await rootBundle.load('assets/models/whisper/test_audio.wav');
+          final sttAudioBytes =
+              sttAssetData.buffer.asUint8List(sttAssetData.offsetInBytes, sttAssetData.lengthInBytes);
+          final sttResult = await ml.stt.recognizeBytes(sttAudioBytes);
           _appendEntry(
             ConversationEntry(
               role: ConversationEntryRole.assistant,
               text: '',
               contentBlocks: [
                 const TextBlock('🎤 STT 完成'),
-                TextBlock('文本: ${result.text}'),
-                MetricBlock('置信度', result.confidence.toStringAsFixed(2)),
-                MetricBlock('语言', result.language ?? 'unknown'),
+                TextBlock('文本: ${sttResult.text}'),
+                MetricBlock('置信度', sttResult.confidence.toStringAsFixed(2)),
+                MetricBlock('语言', sttResult.language ?? 'unknown'),
               ],
             ),
           );
           break;
 
         case 'ocr':
+          _appendEntry(
+            const ConversationEntry(
+              role: ConversationEntryRole.user,
+              text: '📷 OCR 识别',
+            ),
+          );
           if (!ml.ocr.isLoaded) {
             _appendEntry(
               ConversationEntry(
@@ -230,88 +348,29 @@ class _TestPageState extends State<TestPage> {
             );
             return;
           }
-          final onePixelPng = Uint8List.fromList(const [
-            0x89,
-            0x50,
-            0x4E,
-            0x47,
-            0x0D,
-            0x0A,
-            0x1A,
-            0x0A,
-            0x00,
-            0x00,
-            0x00,
-            0x0D,
-            0x49,
-            0x48,
-            0x44,
-            0x52,
-            0x00,
-            0x00,
-            0x00,
-            0x01,
-            0x00,
-            0x00,
-            0x00,
-            0x01,
-            0x08,
-            0x06,
-            0x00,
-            0x00,
-            0x00,
-            0x1F,
-            0x15,
-            0xC4,
-            0x89,
-            0x00,
-            0x00,
-            0x00,
-            0x0D,
-            0x49,
-            0x44,
-            0x41,
-            0x54,
-            0x78,
-            0x9C,
-            0x63,
-            0xF8,
-            0xCF,
-            0xC0,
-            0xF0,
-            0x1F,
-            0x00,
-            0x05,
-            0x00,
-            0x01,
-            0xFF,
-            0x89,
-            0x99,
-            0x3D,
-            0x1D,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x49,
-            0x45,
-            0x4E,
-            0x44,
-            0xAE,
-            0x42,
-            0x60,
-            0x82,
-          ]);
-          final result = await ml.ocr.recognizeBytes(onePixelPng);
+          if (_selectedImageBytes == null) {
+            _appendEntry(
+              ConversationEntry(
+                role: ConversationEntryRole.error,
+                text: buildTestInferenceFailedStatus(
+                  taskLabel: 'OCR',
+                  reason: '请先拍照或选择图片',
+                ),
+              ),
+            );
+            return;
+          }
+          final ocrResult = await ml.ocr.recognizeBytes(_selectedImageBytes!);
           _appendEntry(
             ConversationEntry(
               role: ConversationEntryRole.assistant,
               text: '',
               contentBlocks: [
-                const TextBlock('📷 OCR 完成'),
+                const TextBlock('📷 OCR 识别完成'),
                 OCRBlockDisplay(
-                  text: result.text,
-                  confidence: result.averageConfidence,
+                  text: ocrResult.text,
+                  confidence: ocrResult.averageConfidence,
+                  imageBytes: _selectedImageBytes,
                 ),
               ],
             ),

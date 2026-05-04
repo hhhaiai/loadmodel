@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.speech.tts.TextToSpeech
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -14,6 +15,7 @@ import io.flutter.plugin.common.MethodChannel.Result
 import kotlinx.coroutines.*
 import java.io.File
 import java.io.FileNotFoundException
+import java.util.Locale
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OnnxValue
 import ai.onnxruntime.OrtEnvironment
@@ -213,6 +215,10 @@ class ModelLoaderPlugin : FlutterPlugin, MethodCallHandler {
     private var sttDecoderSession: OrtSession? = null
     private var embeddingSession: OrtSession? = null
 
+    // Text-to-Speech engine
+    private var tts: TextToSpeech? = null
+    private var ttsInitialized = false
+
     // Tokenizer for embedding models
     private var tokenizer: AndroidWordPieceTokenizer? = null
 
@@ -258,6 +264,15 @@ class ModelLoaderPlugin : FlutterPlugin, MethodCallHandler {
         } catch (e: Exception) {
             android.util.Log.e("ModelLoader", "Error closing ONNX sessions: ${e.message}")
         }
+
+        // Cleanup TTS
+        try {
+            tts?.shutdown()
+            tts = null
+            ttsInitialized = false
+        } catch (e: Exception) {
+            android.util.Log.e("ModelLoader", "Error closing TTS: ${e.message}")
+        }
     }
 
     override fun onMethodCall(call: MethodCall, result: Result) {
@@ -278,9 +293,9 @@ class ModelLoaderPlugin : FlutterPlugin, MethodCallHandler {
             "recognizeSTT" -> handleRecognizeSTT(call, result)
 
             // TTS Methods
-            "loadTTSModel" -> result.error("NOT_IMPLEMENTED", "TTS not implemented", null)
-            "unloadTTSModel" -> result.success(true)
-            "synthesizeTTS" -> result.error("NOT_IMPLEMENTED", "TTS not implemented", null)
+            "loadTTSModel" -> handleLoadTTSModel(call, result)
+            "unloadTTSModel" -> handleUnloadTTSModel(result)
+            "synthesizeTTS" -> handleSynthesizeTTS(call, result)
 
             // LLM Methods
             "loadLLMModel" -> handleLoadLLMModel(call, result)
@@ -539,6 +554,19 @@ class ModelLoaderPlugin : FlutterPlugin, MethodCallHandler {
                 val outputTensor = output.first().value
                 val outputArray = outputTensor.value as Array<Array<FloatArray>>
 
+                // Debug: log output shape and first few timesteps
+                android.util.Log.d("ModelLoader", "OCR output dims: batch=${outputArray.size}, seqLen=${outputArray[0].size}, vocab=${outputArray[0][0].size}")
+                for (t in 0 until minOf(10, outputArray[0].size)) {
+                    // Find top 5 values
+                    val top5 = mutableListOf<Pair<Int, Float>>()
+                    for (i in 0 until outputArray[0][t].size) {
+                        top5.add(Pair(i, outputArray[0][t][i]))
+                    }
+                    top5.sortByDescending { it.second }
+                    val top5str = top5.take(5).joinToString(" ") { "${it.first}=${String.format("%.2f", it.second)}" }
+                    android.util.Log.d("ModelLoader", "OCR timestep $t top5: $top5str")
+                }
+
                 val text = ctcGreedyDecode(outputArray[0])
 
                 // Compute average confidence from softmax probabilities
@@ -594,10 +622,17 @@ class ModelLoaderPlugin : FlutterPlugin, MethodCallHandler {
 
         for (i in pixels.indices) {
             val pixel = pixels[i]
+            // Debug: log first pixel values
+            if (i == 0) {
+                android.util.Log.d("ModelLoader", "First pixel ARGB: ${Integer.toHexString(pixel)}")
+            }
+            // RGB channel order - extracted from ARGB format
             rPlane[i] = (((pixel shr 16 and 0xFF) / 255.0f) - mean[0]) / std[0]
             gPlane[i] = (((pixel shr 8 and 0xFF) / 255.0f) - mean[1]) / std[1]
             bPlane[i] = (((pixel and 0xFF) / 255.0f) - mean[2]) / std[2]
         }
+        // Debug: log first normalized channel values
+        android.util.Log.d("ModelLoader", "Normalized R[0]=${rPlane[0]}, G[0]=${gPlane[0]}, B[0]=${bPlane[0]}")
 
         buffer.put(rPlane)
         buffer.put(gPlane)
@@ -1383,16 +1418,173 @@ class ModelLoaderPlugin : FlutterPlugin, MethodCallHandler {
 
     /**
      * Convert audio data to float array for STT inference
+     * Supports both raw 16-bit PCM and WAV files (with RIFF header)
      */
     private fun convertAudioToFloat(audioData: ByteArray): FloatArray {
-        // Assuming 16-bit PCM audio
-        val shortArray = ShortArray(audioData.size / 2)
+        val pcmData = if (audioData.size >= 4 &&
+            audioData[0].toInt() == 0x52 && // 'R'
+            audioData[1].toInt() == 0x49 && // 'I'
+            audioData[2].toInt() == 0x46 && // 'F'
+            audioData[3].toInt() == 0x46    // 'F'
+        ) {
+            // WAV file - find the 'data' chunk and skip header
+            android.util.Log.d("ModelLoader", "STT: Detected WAV file, parsing header")
+            extractPCMFromWAV(audioData)
+        } else {
+            // Raw PCM
+            audioData
+        }
+
+        // Assuming 16-bit PCM audio, little-endian
+        val shortArray = ShortArray(pcmData.size / 2)
         for (i in shortArray.indices) {
-            val low = audioData[i * 2].toInt() and 0xFF
-            val high = audioData[i * 2 + 1].toInt() shl 8
+            val low = pcmData[i * 2].toInt() and 0xFF
+            val high = pcmData[i * 2 + 1].toInt() shl 8
             shortArray[i] = (low + high).toShort()
         }
         return shortArray.map { it.toFloat() / Short.MAX_VALUE.toFloat() }.toFloatArray()
+    }
+
+    /**
+     * Extract raw PCM data from a WAV file by skipping the RIFF header
+     */
+    private fun extractPCMFromWAV(wavData: ByteArray): ByteArray {
+        // WAV format: RIFF header + fmt chunk + data chunk
+        // We need to find the 'data' chunk and return only the PCM data
+        var offset = 12 // Skip RIFF header (12 bytes)
+
+        while (offset < wavData.size - 8) {
+            val chunkId = String(wavData.copyOfRange(offset, offset + 4), Charsets.US_ASCII)
+            val chunkSize = wavData[offset + 4].toInt() and 0xFF or
+                (wavData[offset + 5].toInt() and 0xFF shl 8) or
+                (wavData[offset + 6].toInt() and 0xFF shl 16) or
+                (wavData[offset + 7].toInt() and 0xFF shl 24)
+
+            if (chunkId == "data") {
+                // Found data chunk - return the PCM data
+                val dataStart = offset + 8
+                val dataEnd = minOf(dataStart + chunkSize, wavData.size)
+                return wavData.copyOfRange(dataStart, dataEnd)
+            }
+
+            offset += 8 + chunkSize
+            // Word alignment (chunks are word-aligned)
+            if (chunkSize % 2 != 0) offset++
+        }
+
+        android.util.Log.w("ModelLoader", "STT: WAV data chunk not found, using full buffer")
+        return wavData
+    }
+
+    // ============================================================
+    // TTS Methods (Android TextToSpeech)
+    // ============================================================
+
+    private fun handleLoadTTSModel(call: MethodCall, result: Result) {
+        val language = call.argument<String>("language") ?: "en-US"
+
+        try {
+            if (tts == null) {
+                tts = TextToSpeech(applicationContext) { status ->
+                    if (status == TextToSpeech.SUCCESS) {
+                        ttsInitialized = true
+                        android.util.Log.i("ModelLoader", "TTS initialized successfully")
+                    } else {
+                        ttsInitialized = false
+                        android.util.Log.e("ModelLoader", "TTS initialization failed with status: $status")
+                    }
+                }
+            }
+
+            // Wait a bit for initialization if not yet done
+            if (!ttsInitialized) {
+                Thread.sleep(500) // Give TTS engine time to initialize
+            }
+
+            val locale = when {
+                language.startsWith("zh") -> Locale.SIMPLIFIED_CHINESE
+                language.startsWith("ja") -> Locale.JAPANESE
+                language.startsWith("ko") -> Locale.KOREAN
+                language.startsWith("es") -> Locale("es", "ES")
+                language.startsWith("fr") -> Locale.FRENCH
+                language.startsWith("de") -> Locale.GERMAN
+                else -> Locale.US
+            }
+
+            val langStatus = tts?.setLanguage(locale)
+            if (langStatus == TextToSpeech.LANG_MISSING_DATA || langStatus == TextToSpeech.LANG_NOT_SUPPORTED) {
+                android.util.Log.w("ModelLoader", "Language not supported: $language, falling back to US")
+                tts?.setLanguage(Locale.US)
+            }
+
+            android.util.Log.i("ModelLoader", "TTS model loaded for language: $language")
+            result.success(true)
+        } catch (e: Exception) {
+            android.util.Log.e("ModelLoader", "Failed to load TTS model: ${e.message}")
+            result.error("LOAD_ERROR", "Failed to load TTS model: ${e.message}", null)
+        }
+    }
+
+    private fun handleUnloadTTSModel(result: Result) {
+        try {
+            tts?.shutdown()
+            tts = null
+            ttsInitialized = false
+            android.util.Log.i("ModelLoader", "TTS model unloaded")
+            result.success(true)
+        } catch (e: Exception) {
+            android.util.Log.e("ModelLoader", "Failed to unload TTS model: ${e.message}")
+            result.error("UNLOAD_ERROR", "Failed to unload TTS model: ${e.message}", null)
+        }
+    }
+
+    private fun handleSynthesizeTTS(call: MethodCall, result: Result) {
+        val text = call.argument<String>("text")
+        if (text.isNullOrBlank()) {
+            result.error("INVALID_ARGS", "text is required", null)
+            return
+        }
+
+        val outputPath = call.argument<String>("outputPath")
+        if (outputPath.isNullOrBlank()) {
+            result.error("INVALID_ARGS", "outputPath is required", null)
+            return
+        }
+
+        if (!ttsInitialized || tts == null) {
+            result.error("TTS_NOT_INITIALIZED", "TTS engine not initialized", null)
+            return
+        }
+
+        try {
+            val javaFile = java.io.File(outputPath)
+
+            // Set speech rate and pitch on TTS instance before synthesis
+            val speed = call.argument<Double>("speed")
+            if (speed != null && speed > 0) {
+                tts?.setSpeechRate(speed.toFloat())
+            }
+
+            val pitch = call.argument<Double>("pitch")
+            if (pitch != null && pitch > 0) {
+                tts?.setPitch(pitch.toFloat())
+            }
+
+            // Bundle params for synthesizeToFile - only for utterance extras, not rate/pitch
+            val params = android.os.Bundle()
+
+            val success = tts?.synthesizeToFile(text, params, javaFile, outputPath)
+            if (success == TextToSpeech.SUCCESS) {
+                android.util.Log.i("ModelLoader", "TTS synthesized to: $outputPath")
+                result.success(outputPath)
+            } else {
+                android.util.Log.e("ModelLoader", "TTS synthesizeToFile failed with code: $success")
+                result.error("SYNTHESIS_ERROR", "Failed to synthesize speech, error code: $success", null)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ModelLoader", "TTS synthesis failed: ${e.message}")
+            result.error("SYNTHESIS_ERROR", "TTS synthesis failed: ${e.message}", null)
+        }
     }
 
     // ============================================================

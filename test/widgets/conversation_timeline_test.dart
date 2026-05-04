@@ -219,7 +219,7 @@ void main() {
           ],
         ),
       ]);
-      expect(find.text('OCR 置信度: 0.95'), findsOneWidget);
+      expect(find.text('置信度: 95.0%'), findsOneWidget);
       expect(find.text('识别结果'), findsOneWidget);
     });
 

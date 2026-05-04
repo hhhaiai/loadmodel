@@ -312,16 +312,54 @@ class OnnxRuntimeManager {
     // MARK: - STT Audio Processing
 
     /// Convert 16-bit PCM byte data to float array
+    /// Supports both raw PCM and WAV files (with RIFF header)
     private func convertAudioToFloat(data: Data) -> [Float] {
-        let sampleCount = data.count / 2
+        let pcmData: Data
+        if data.count >= 4 {
+            let riff = data.prefix(4)
+            if riff == Data([0x52, 0x49, 0x46, 0x46]) { // "RIFF"
+                print("OnnxRuntimeManager: Detected WAV file, parsing header")
+                pcmData = extractPCMFromWAV(data: data)
+            } else {
+                pcmData = data
+            }
+        } else {
+            pcmData = data
+        }
+
+        let sampleCount = pcmData.count / 2
         var samples = [Float](repeating: 0, count: sampleCount)
-        data.withUnsafeBytes { rawBuffer in
+        pcmData.withUnsafeBytes { rawBuffer in
             let int16Buffer = rawBuffer.bindMemory(to: Int16.self)
             for i in 0..<sampleCount {
                 samples[i] = Float(int16Buffer[i]) / 32768.0
             }
         }
         return samples
+    }
+
+    /// Extract raw PCM data from a WAV file by skipping the RIFF header
+    private func extractPCMFromWAV(data: Data) -> Data {
+        var offset = 12 // Skip RIFF header (12 bytes)
+
+        while offset < data.count - 8 {
+            let chunkIdData = data.subdata(in: offset..<offset+4)
+            let chunkId = String(data: chunkIdData, encoding: .ascii) ?? ""
+            let chunkSize = Int(data[offset+4]) | Int(data[offset+5]) << 8 |
+                Int(data[offset+6]) << 16 | Int(data[offset+7]) << 24
+
+            if chunkId == "data" {
+                let dataStart = offset + 8
+                let dataEnd = min(dataStart + chunkSize, data.count)
+                return data.subdata(in: dataStart..<dataEnd)
+            }
+
+            offset += 8 + chunkSize
+            if chunkSize % 2 != 0 { offset += 1 } // Word alignment
+        }
+
+        print("OnnxRuntimeManager: WAV data chunk not found, using full buffer")
+        return data
     }
 
     /// Compute log-mel spectrogram [80, 3000]

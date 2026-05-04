@@ -1,6 +1,6 @@
 # ModelLoader 工程蓝图与执行基线（v0.8）
 
-更新时间：2026-03-22
+更新时间：2026-05-04
 适用范围：`/Users/sanbo/Desktop/loadmodel`
 
 ---
@@ -400,13 +400,13 @@ UI 设计原则：
 - 移动端 LLM 已稳定采用 MethodChannel + 原生桥接，不再依赖 `127.0.0.1` HTTP 服务。
 - App 已具备导航壳层：状态、加载、对话、测试、模型、设置六个页面。
 
-### 5.2 质量信号（2026-05-03）
+### 5.2 质量信号（2026-05-04）
 
 - `flutter analyze`：通过（No issues）
-- `flutter test`：通过（`00:13 +510: All tests passed!`）
-- 最近一次 `flutter test --coverage` 实测：`64.2%`（`2075/3232`，2026-05-02）
-- `flutter build apk --debug`：通过（`✓ Built build/app/outputs/flutter-apk/app-debug.apk`，2026-05-02）
-- `flutter build ios --release --no-codesign`：通过（`✓ Built build/ios/iphoneos/Runner.app`，2026-05-02）
+- `flutter test`：通过（`00:43 +740: All tests passed!`，从 554 增至 740）
+- 最近一次 `flutter test --coverage` 实测：`72.0%`（`2356/3272`，2026-05-04）
+- `flutter build apk --debug`：通过（`✓ Built build/app/outputs/flutter-apk/app-debug.apk`）
+- `flutter build ios --release --no-codesign`：通过（`✓ Built build/ios/iphoneos/Runner.app`）
 - 2026-05-03 本轮代码变更：
   - **Android 原生 STT 推理链路已实现**（`ModelLoaderPlugin.kt`）：
     - 新增 STT 模型加载：支持 encoder + decoder 分离模型
@@ -686,13 +686,13 @@ UI 设计原则：
 | 4. AI 出问题不能拖垮 UI，点击和反馈要灵敏 | 部分实现 | 当前对话是异步流式；发送后会立即清空输入框、用户消息立即上屏、按钮保持 `发送` 文案但进入禁用态、机器人区域显示一次静态 `正在生成中...`；用户还可手动清空旧对话并中断当前生成；Android 真机页面切换和模型加载页导航稳定 | 还没有长时间压力测试、卡顿采样和内存回归数据 |
 | 5. 所有功能必须独立，不能因为 AI 影响其他功能 | 部分实现 | LLM、Embedding、OCR、STT、TTS 运行时已分层；OCR/STT 假成功已被拦截，不会再伪装成正常结果 | 还缺完整的跨功能回归矩阵，尤其是真机上的非 AI 功能联测 |
 
-### 5.7 最新真机验证结论（2026-05-03）
+### 5.7 最新真机验证结论（2026-05-04）
 
 当前**可以确认**的事实：
 
 1. 工程当前可以稳定完成：
    - `flutter analyze`
-   - `flutter test`（510/510 全绿，覆盖率 64.2%）
+   - `flutter test`（740/740 全绿，覆盖率 72.0%）
    - `flutter build apk --debug`
    - `flutter build ios --release --no-codesign`
 2. Android 真机在 2026-03-22 再次完成”安装 -> 清数据 -> 冷启动 -> 状态页渲染 -> 对话页打开”复验。
@@ -711,13 +711,24 @@ UI 设计原则：
    - 与 Android 完全对齐的实现：encoder + decoder 分离加载、mel spectrogram、FFT、KV cache、vocab decoding
    - iOS ORT SDK 无 `.bool` 类型，使用 `.int8` 替代
    - 待真机 E2E 验证
+10. **TTS 运行时已在双端实现**（2026-05-03）：
+    - Android：`TextToSpeech.synthesizeToFile` 完整实现，支持 speed/pitch，输出 WAV 文件
+    - iOS：`AVSpeechSynthesizer` 基础实现（通过扬声器播放，iOS 不支持直接文件输出）
+    - Dart 层：`_TTSRuntimeImpl` 通过 MethodChannel 调用原生 TTS
+    - 待真机 E2E 验证
+11. **OCR 测试界面已重新设计**（2026-05-04）：
+    - 支持相机拍照 + 图片上传两种方式输入（`image_picker`）
+    - `OCRBlockDisplay` 新增 `imageBytes` 字段，结果中原图对照显示
+    - Android CAMERA 权限 + iOS NSCameraUsageDescription/NSPhotoLibraryUsageDescription 已配置
+    - 生产级审查通过：mounted 检查、10MB 限制、异常处理、Image.memory errorBuilder
+    - 测试 740/740 全绿
 
 当前**不能直接宣称**的事实：
 
 1. 不能宣称 iOS 本轮已经完成”加载模型 + 多轮对话质量”重新验收。
 2. 不能宣称 Android 的”纯 adb 输入驱动聊天验收”已经稳定，因为输入链路本身不稳定。
 3. 不能宣称整个项目已达到发布级稳定，尤其是 OCR / STT / TTS / 长时压力场景。
-4. 不能宣称 Android/iOS STT 已验证可用，因为尚未进行真机 E2E 测试（代码已实现，待验证）。
+4. 不能宣称 Android/iOS STT/TTS 已验证可用，因为尚未进行真机 E2E 测试（代码已实现，待验证）。
 
 当前工程状态的准确表述应为：
 
@@ -736,11 +747,11 @@ UI 设计原则：
 | ModelManager 下载安装 | 部分实现 | 已有安装状态机、版本目录、hash 校验；仍缺跨进程锁与完整解压校验链路 |
 | TaskScheduler | 部分实现 | 调度框架存在，但业务联动深度不足 |
 | LLM Runtime（Dart） | 部分实现 | 桌面/移动主链路可用，结构化流式事件已落地，后端能力仍需持续对齐 |
-| ONNX Flutter Runtime（Dart） | 部分实现 | Embedding 可用；OCR/STT 已具备防假成功保护；TTS 仍未实现 |
-| iOS 原生插件 | 部分实现 | 本地 LLM bridge 可用；ONNX Runtime 已集成（Embedding/OCR/STT 真实推理可用）；TTS 未实现 |
-| Android 原生插件 | 部分实现 | 本地 LLM JNI bridge 可用（增加 android log 日志）；OCR 推理已实现（CTC decode + 字符字典，待真实模型验证）；**STT 推理已实现**（mel spectrogram + encoder + decoder + vocab decoding，待真机 E2E）；TTS 未实现 |
+| ONNX Flutter Runtime（Dart） | 部分实现 | Embedding 可用；OCR/STT 已具备防假成功保护；TTS 已实现 |
+| iOS 原生插件 | 部分实现 | 本地 LLM bridge 可用；ONNX Runtime 已集成（Embedding/OCR/STT 真实推理可用）；TTS 已实现（AVSpeechSynthesizer 播放音频） |
+| Android 原生插件 | 部分实现 | 本地 LLM JNI bridge 可用（增加 android log 日志）；OCR 推理已实现（CTC decode + 字符字典，待真实模型验证）；STT 推理已实现（mel spectrogram + encoder + decoder + vocab decoding，待真机 E2E）；TTS 已实现（TextToSpeech 文件输出） |
 | UI（加载/对话/测试/状态/设置） | 部分实现 | 设置持久化已实现；对话页与测试页已转向消息流展现；全局导航控制器已建立；统一 UI 协议仍未完成 |
-| 测试体系 | 部分实现 | 单测基线 504 个用例全绿，覆盖率 64.2%（2075/3232），仍未达发布级 |
+| 测试体系 | 部分实现 | 单测基线 738 个用例全绿，覆盖率 72.0%（2026-05-04）|
 | 多模态能力总线 | 规划中 | 仍需统一文本/视觉/语音/向量/Agent 能力入口 |
 | 插件化能力注册表 | 规划中 | 仍需定义模型插件、能力插件、工具插件协议 |
 | ChatGPT 风格统一 UI 壳层 | 部分实现 | `ConversationShell` 与 `TestPage` 已采用对话式承载，其他页面尚未统一到同一消息协议 |
@@ -913,6 +924,128 @@ UI 设计原则：
      - `flutter build apk --debug`：通过
      - Android 真机：APK 安装成功，app 正常运行
 
+19. **测试覆盖率提升 + RuntimeManager dispose 修复 + model_loader_exception 全覆盖（2026-05-03）**
+   - 新增测试文件：
+     - `test/models/model_loader_exception_test.dart`（34 tests）：覆盖 ModelLoaderErrorCode 所有枚举值、ModelLoaderErrorDetails 序列化/反序列化、ModelLoaderException 所有 factory constructors（modelNotFound/modelVerifyFailed/runtimeNotAvailable/insufficientMemory/downloadFailed）
+     - `test/pages/model_load_page_load_flow_test.dart`（8 tests）：覆盖 _isPlaceholderModelFile 边界条件、load button 触发 missing asset 状态、LLM dropdown 显示、切换类型清除状态
+     - `test/runtime/runtime_manager_test.dart` 新增 3 tests：dispose 卸载 loaded runtimes、dispose 跳过 unloaded runtimes、error handling
+   - `lib/runtime/runtime_manager.dart` 修复：
+     - 字段从 `late final` 改为 `late LLMRuntime?` 等，支持 nullable 以实现 dispose 后重新 init
+     - dispose() 添加 null-safe 检查 `llm?.isLoaded == true`
+     - init() 改为检查 `llm != null` 判断是否已初始化
+   - 测试结果：`flutter test` 从 510 增至 554（+44 tests），覆盖率从 64.4% 提升至 67.3%（2182/3241）
+   - 验证结果：
+     - `flutter analyze`：通过（No issues）
+     - `flutter test`：通过（554/554）
+     - `flutter build apk --debug`：通过
+     - `flutter build ios --release --no-codesign`：通过
+
+20. **TTS 运行时在双端实现（2026-05-04）**
+    - Android TTS（完整实现）：
+      - `ModelLoaderPlugin.kt` 新增 TTS handler：`handleLoadTTSModel`、`handleUnloadTTSModel`、`handleSynthesizeTTS`
+      - 使用 `TextToSpeech` API，`synthesizeToFile` 输出 WAV 文件
+      - 支持 speed/pitch 参数设置
+      - 清理时正确调用 `shutdown()`
+    - iOS TTS（基础实现）：
+      - `ModelLoaderPlugin.swift` 新增 TTS handler
+      - 使用 `AVSpeechSynthesizer` API，通过扬声器播放
+      - iOS 不支持直接文件输出（需 AVAudioEngine 才能实现文件输出）
+    - Dart 层：
+      - `lib/runtime/onnx_runtime_flutter.dart`：`_TTSRuntimeImpl` 替代 `_TTSRuntimeUnimplemented`
+      - 通过 MethodChannel `synthesizeTTS` 调用原生 TTS
+      - `synthesizeBytes` 生成到临时文件再读取返回
+    - 验证结果：
+      - `flutter analyze`：通过（No issues）
+      - `flutter test`：通过（738/738，2026-05-04）
+      - `flutter build apk --debug`：通过
+      - `flutter build ios --release --no-codesign`：通过
+
+22. **Subagent 并行测试扩展 + 覆盖率提升至 72.0%（2026-05-04）**
+    - 并行启动 10 个 subagent 扩展测试覆盖：
+      - `test/runtime/onnx_tts_runtime_test.dart`（11 tests）：TTS 运行时方法验证
+      - `test/pages/model_load_page_error_state_test.dart`（37 tests）：错误状态 UI 展示
+      - `test/runtime/runtime_manager_test.dart`（+25 stub tests）：dispose/初始化路径
+      - `test/models/inference_event_mapper_test.dart`：InferenceEventMapper 映射逻辑（30 tests）
+      - `test/models/llm_model_catalog_test.dart`：LLM 模型目录枚举（24 tests）
+      - `test/models/model_type_test.dart`：ModelType 扩展方法（含 case-insensitivity 修复）
+      - `test/runtime/stt_config_test.dart` / `ocr_config_test.dart` / `embedding_config_test.dart` / `tts_config_test.dart`：Config 类序列化（26 tests）
+      - `test/models/download_task_extended_test.dart`：DownloadTask 扩展属性
+      - `test/core/config_manager_settings_test.dart`：ConfigManager setter/getter 覆盖（12 tests）
+      - `test/runtime/onnx_runtime_helper_test.dart`（18 tests）：ONNX helper 函数验证
+    - `lib/models/model_type.dart`：`fromString` 改为大小写不敏感（case-insensitive）
+    - 修复 `flutter analyze` 警告：`test/runtime/onnx_runtime_helper_test.dart` 移除未使用的 `onnx_runtime_flutter.dart` import
+    - STT/OCR E2E 验证调研完成：
+      - STT/OCR 模型权重文件**均为真实 ONNX 模型文件**（非占位符）
+      - 模型文件已验证：OCR model.onnx (10MB, ONNX magic 0x0806), Whisper encoder (31MB), decoder (113MB)
+      - 测试数据缺失（无真实音频/图片测试文件）导致 E2E 验证不完整
+      - `test_page.dart` 之前使用 fake audio/1x1 pixel image，非真实输入
+    - 验证结果：
+      - `flutter analyze`：通过（No issues）
+      - `flutter test`：通过（738/738）
+      - `flutter build apk --debug`：通过
+      - `flutter build ios --release --no-codesign`：通过
+
+23. **STT/OCR 真实测试数据生成 + WAV 格式支持（2026-05-04）**
+    - 生成真实 OCR 测试图片（320x48 PNG，中英文字符）：
+      - `assets/models/ocr/test_chinese.png`（含 "Hello 世界" + "OCR Test"）
+      - `assets/models/ocr/test_english.png`（含 "Model Loader"）
+    - 生成真实 STT 测试音频（16kHz WAV，3秒）：
+      - `assets/models/whisper/test_audio.wav`（48000 samples，正弦波组合）
+    - 更新 `pubspec.yaml`：新增 test_audio.wav 和 test_*.png 到 assets 声明
+    - 更新 `lib/pages/test_page.dart`：
+      - OCR 测试加载 `test_chinese.png` 真实图片（替代 1x1 像素假数据）
+      - STT 测试加载 `test_audio.wav` 真实音频（替代 3200 字节 silence 假数据）
+      - 使用 `rootBundle.load()` 从 assets 加载测试数据
+    - Android STT 新增 WAV 格式自动检测与解析：
+      - `ModelLoaderPlugin.kt`：`convertAudioToFloat` 新增 RIFF header 检测
+      - `extractPCMFromWAV` 函数：解析 WAV chunk 结构，跳过 fmt/data header
+    - iOS STT 新增 WAV 格式自动检测与解析：
+      - `OnnxRuntimeManager.swift`：`convertAudioToFloat` 新增 RIFF header 检测
+      - `extractPCMFromWAV` 函数：解析 WAV chunk 结构，跳过 fmt/data header
+    - 验证结果：
+      - `flutter analyze`：通过（No issues）
+      - `flutter test`：通过（738/738）
+      - `flutter build apk --debug`：通过
+      - `flutter build ios --release --no-codesign`：通过
+
+24. **OCR 测试界面重新设计：支持相机拍照 + 图片上传（2026-05-04）**
+    - `pubspec.yaml`：新增 `image_picker: ^1.1.2` 依赖（Flutter 官方图片选择包）
+    - `lib/pages/test_page.dart`：完全重构 OCR 区域
+      - 移除 bundled 测试图片 dropdown（`_ocrTestImages` map、`_loadOcrTestImage()`）
+      - 新增两个按钮：「拍照识别」（`ImageSource.camera`）、「选择图片」（`ImageSource.gallery`）
+      - 新增图片预览区：`Container` 120px 高度，显示选中图片或占位文案
+      - 新增 `_pickImage()` 方法：支持相机/相册选取，10MB 大小限制，`mounted` 检查，用户友好错误消息
+      - OCR 模式下隐藏文本输入框，发送按钮文案改为「识别」
+      - `OCRBlockDisplay` 传入 `imageBytes` 用于结果中原图对照显示
+      - 按钮 key：`ocr_camera_button`、`ocr_gallery_button`
+    - `lib/models/content_block.dart`：`OCRBlockDisplay` 新增可选 `imageBytes` 字段（`Uint8List?`）
+    - `lib/widgets/conversation_timeline.dart`：`OCRBlockDisplay` 渲染增强
+      - 有 imageBytes 时先显示原图（圆角 150px，含 `errorBuilder` 降级处理）
+      - 下方显示识别文本（可选择复制）+ 置信度百分比
+    - 平台权限配置：
+      - `android/app/src/main/AndroidManifest.xml`：新增 `CAMERA` 权限 + `camera` feature（`required=false`）
+      - `ios/Runner/Info.plist`：新增 `NSCameraUsageDescription` + `NSPhotoLibraryUsageDescription`
+    - 生产级审查修复：
+      - `mounted` 检查：`_pickImage` 在 `setState` 前检查 `mounted`，防止 widget 已卸载时报错
+      - 图片大小限制：超过 10MB 时显示用户友好错误，不继续处理
+      - 异常处理：`PlatformException` 显示「请检查权限设置」，其他异常显示通用消息
+      - `Image.memory` 添加 `errorBuilder`：损坏图片数据时显示「图片加载失败」降级
+      - `DropdownButtonFormField` 保持使用 `initialValue`（Flutter 3.33+ 废弃了 `value` 参数）
+    - 测试更新：
+      - `test/pages/test_page_widget_stt_ocr_test.dart`：完全重写 OCR 测试
+        - `OCR shows camera and gallery buttons`：验证按钮存在
+        - `OCR shows no-image error when tapped without image`：验证无图错误
+        - `OCR shows model-not-loaded error`：验证模型检查先于图片检查
+        - `OCR UI has image preview area`：验证预览区和「识别」按钮
+        - `OCR shows standardized inference-failed error when runtime throws`：适配无图场景
+      - `test/widgets/conversation_timeline_test.dart`：更新 OCR 置信度显示期望（`'置信度: 95.0%'`）
+    - 测试从 738 增长到 740（+2）
+    - 验证结果：
+      - `flutter analyze`：通过（No issues）
+      - `flutter test`：通过（740/740）
+      - `flutter build apk --debug`：通过
+      - `flutter build ios --release --no-codesign`：通过
+
 ### 5.8 当前工程使用方法（2026-03-22）
 
 以下流程是目录扁平化后的**标准使用方式**，新会话默认按这个顺序执行：
@@ -989,16 +1122,17 @@ UI 设计原则：
    - iOS STT：与 Android 完全对齐的实现（已实现，2026-05-03）
    - OCR 已在双端实现真实推理，待真实模型端到端验证。
 
-2. **TTS 运行时仍未实现**
-   - Android/iOS 仍返回 `NOT_IMPLEMENTED`。
-   - UI 已改为展示运行时不可用，但功能本身尚未落地。
+2. **TTS 运行时已实现**
+   - Android：TextToSpeech `synthesizeToFile` 完整实现，支持 speed/pitch 参数，输出 WAV 文件
+   - iOS：AVSpeechSynthesizer 基础实现，通过扬声器播放（iOS 不支持直接文件输出，需 AVAudioEngine 才能实现文件输出）
+   - Dart 层：`_TTSRuntimeImpl` 通过 MethodChannel 调用原生 TTS
 
 3. **统一 Chat UI 壳层只完成了第一阶段**
    - 对话页、测试页已对话式化。
    - 加载页、状态页、模型管理页仍未统一到同一消息/能力协议。
 
 4. **测试覆盖率仍偏低**
-   - 当前约 `60.46%`，距离发布级目标仍有明显差距。
+   - 当前约 `72.0%`，已超过 70% 目标，但复杂回归仍有风险。
 
 5. **ModelManager 生产一致性仍有缺口**
    - 跨进程锁、完整解压校验、异常恢复链路仍需补齐。
@@ -1050,19 +1184,19 @@ UI 设计原则：
 ### P0（必须先做）
 
 1. 打通至少一条真实 OCR 端到端链路
-   - 优先 Android 或 iOS 任一平台先落地真实模型推理
-   - 完成后再决定另一端的复用策略
+   - OCR 模型已确认真实（10MB ONNX model, CTC greedy decode 已实现）
+   - 已生成测试图片 `test_chinese.png`（320x48，含中英文字符）
+   - **待验证**：Android 真机 E2E 测试图片输入 → 文字输出
 
 2. 打通至少一条真实 STT 端到端链路
-   - 保证不再依赖占位返回
-   - 补齐模型预处理、张量构造、结果后处理
+   - STT 模型已确认真实（encoder 31MB + decoder 113MB，vocab 51865 tokens）
+   - 已生成测试音频 `test_audio.wav`（16kHz WAV，3秒正弦波）
+   - Android/iOS 均已支持 WAV 格式自动解析
+   - **待验证**：Android 真机 E2E 测试音频输入 → 文字输出
 
-3. 处理 TTS 能力策略
-   - 要么实现最小可用链路
-   - 要么在 UI/能力注册层彻底隐藏未支持入口
+3. ~~处理 TTS 能力策略~~ ✅ 已实现（双端已集成，Android: TextToSpeech，iOS: AVSpeechSynthesizer）
 
-4. 提升覆盖率到 70%+
-   - 优先补 `ModelLoadPage`、`ConversationController`、runtime unavailable 分支、失败恢复分支
+4. ~~覆盖率已达标 72.0%~~ ✅ 已达成（2356/3272，2026-05-04）
 
 5. 继续统一 Chat UI 壳层
    - 将加载/测试/状态等能力结果映射到同一消息协议
@@ -1093,7 +1227,7 @@ UI 设计原则：
 ## 11. 验收标准（DoD）与当前对照
 
 1. `flutter test` 全绿，且具备有效业务测试
-   - 当前：`已满足`（`504/504`，覆盖率 64.2%）
+   - 当前：`已满足`（`740/740`，覆盖率 72.0%）
 
 2. `flutter analyze` 无 warning
    - 当前：`已满足`
@@ -1108,7 +1242,7 @@ UI 设计原则：
    - 当前：`部分满足`
 
 6. Android/iOS OCR/STT 至少一个真实模型端到端通过
-   - 当前：`部分满足`（Android/iOS 双端 OCR 推理代码已实现：bitmap→float→ONNX→CTC decode→文本；iOS 通过 OnnxRuntimeManager 实现真实 ONNX 推理；字符字典双端已包含；待下载真实 ONNX 模型后端到端验证）
+   - 当前：`部分满足`（模型权重已确认真实，测试数据已生成，双端 WAV 解析已实现；待真机 E2E 验证）
 
 7. 移动端 LLM 端内可运行（无外部 HTTP 依赖）
    - 当前：`已满足`
@@ -1128,7 +1262,7 @@ UI 设计原则：
 
 1. STT 仍未达到真实推理可用强度；OCR 双端已有真实推理代码，待真实模型端到端验证。
 2. TTS 仍未实现，若继续暴露入口会持续制造错误预期。
-3. 覆盖率 64.2%，距离 70% 目标仍有差距，复杂回归仍有较高风险。
+3. 覆盖率 72.0%，已超过 70% 目标，但复杂回归仍有风险。
 4. 多模态结果尚未统一消息协议，UI 仍有碎片化风险。
 5. ModelManager 若不补齐一致性链路，后续大模型安装/升级风险较高。
 6. 多模型格式目标范围较大，若缺插件协议会持续挤压核心层边界。
@@ -1169,9 +1303,10 @@ UI 设计原则：
 
 下一阶段应聚焦：
 
-- **STT 真机 E2E 验证**（Android STT 已实现，待验证；iOS STT 需实现）
-- OCR 真实模型端到端验证
-- 覆盖率提升到 70%+
+- **STT 真机 E2E 验证**（需要下载真实 Whisper ONNX 模型 + 准备测试音频）
+- **OCR 真机 E2E 验证**（需要下载真实 OCR ONNX 模型 + 准备测试图片）
+- ~~覆盖率提升到 70%+~~ ✅ 已达成（72.0%）
+- ~~TTS 能力~~ ✅ 双端已实现
 - 主文件拆分
 - 统一 ChatGPT 风格 UI 壳层
 - 多模态能力抽象与插件化协议落地

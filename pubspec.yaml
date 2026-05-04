@@ -12,6 +12,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   path_provider: ^2.1.5
   crypto: ^3.0.6
+  image_picker: ^1.1.2
 
 dev_dependencies:
   flutter_test:
@@ -55,6 +56,14 @@ flutter:
     - assets/models/ocr/model.onnx
     - assets/models/ocr/model_config.json
     - assets/models/ocr/ppocr_keys_v1.txt
+    # Test assets for OCR/STT verification
+    - assets/models/ocr/test_chinese.png
+    - assets/models/ocr/test_english.png
+    - assets/models/ocr/test_ascii.png
+    - assets/models/ocr/test_numbers.png
+    - assets/models/ocr/test_word.png
+    - assets/models/ocr/test_mixed.png
+    - assets/models/whisper/test_audio.wav
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -87,6 +87,67 @@ void main() {
       );
       expect(progress.formattedSpeed, '1.0 KB/s');
     });
+
+    group('copyWith', () {
+      test('copyWith with all parameters', () {
+        const original = DownloadProgress(
+          modelId: 'original-model',
+          received: 100,
+          total: 200,
+          speed: 500,
+        );
+        final updated = original.copyWith(
+          modelId: 'new-model',
+          received: 150,
+          total: 300,
+          speed: 750,
+        );
+        expect(updated.modelId, 'new-model');
+        expect(updated.received, 150);
+        expect(updated.total, 300);
+        expect(updated.speed, 750);
+      });
+
+      test('copyWith with single parameter change', () {
+        const original = DownloadProgress(
+          modelId: 'test-model',
+          received: 100,
+          total: 200,
+          speed: 500,
+        );
+        final updated = original.copyWith(received: 180);
+        expect(updated.modelId, 'test-model');
+        expect(updated.received, 180);
+        expect(updated.total, 200);
+        expect(updated.speed, 500);
+      });
+
+      test('copyWith preserves values when nulls passed', () {
+        const original = DownloadProgress(
+          modelId: 'test-model',
+          received: 100,
+          total: 200,
+          speed: 500,
+        );
+        final updated = original.copyWith();
+        expect(updated.modelId, 'test-model');
+        expect(updated.received, 100);
+        expect(updated.total, 200);
+        expect(updated.speed, 500);
+      });
+
+      test('copyWith with total=0 and non-zero received preserves progress=0', () {
+        const original = DownloadProgress(
+          modelId: 'test-model',
+          received: 0,
+          total: 0,
+        );
+        final updated = original.copyWith(received: 100);
+        expect(updated.total, 0);
+        expect(updated.received, 100);
+        expect(updated.progress, 0.0);
+      });
+    });
   });
 
   group('InstallPhase', () {
@@ -125,6 +186,88 @@ void main() {
       expect(progress.progress, 0.5);
       expect(progress.receivedBytes, 500);
       expect(progress.totalBytes, 1000);
+    });
+
+    group('copyWith', () {
+      test('copyWith with all parameters', () {
+        const original = InstallProgress(
+          modelId: 'original-model',
+          version: '1.0.0',
+          phase: InstallPhase.downloading,
+          requestId: 'req-1',
+          progress: 0.5,
+          receivedBytes: 500,
+          totalBytes: 1000,
+        );
+        final updated = original.copyWith(
+          modelId: 'new-model',
+          version: '2.0.0',
+          phase: InstallPhase.ready,
+          requestId: 'req-2',
+          progress: 1.0,
+          receivedBytes: 1000,
+          totalBytes: 1000,
+        );
+        expect(updated.modelId, 'new-model');
+        expect(updated.version, '2.0.0');
+        expect(updated.phase, InstallPhase.ready);
+        expect(updated.requestId, 'req-2');
+        expect(updated.progress, 1.0);
+        expect(updated.receivedBytes, 1000);
+        expect(updated.totalBytes, 1000);
+      });
+
+      test('copyWith with single parameter change', () {
+        const original = InstallProgress(
+          modelId: 'test-model',
+          version: '1.0.0',
+          phase: InstallPhase.downloading,
+          requestId: 'req-1',
+          progress: 0.3,
+        );
+        final updated = original.copyWith(phase: InstallPhase.extracting);
+        expect(updated.modelId, 'test-model');
+        expect(updated.version, '1.0.0');
+        expect(updated.phase, InstallPhase.extracting);
+        expect(updated.requestId, 'req-1');
+        expect(updated.progress, 0.3);
+      });
+
+      test('copyWith preserves values when not specified', () {
+        const original = InstallProgress(
+          modelId: 'test-model',
+          version: '1.0.0',
+          phase: InstallPhase.verifying,
+          requestId: 'req-1',
+          progress: 0.75,
+          receivedBytes: 750,
+          totalBytes: 1000,
+        );
+        final updated = original.copyWith();
+        expect(updated.modelId, 'test-model');
+        expect(updated.version, '1.0.0');
+        expect(updated.phase, InstallPhase.verifying);
+        expect(updated.requestId, 'req-1');
+        expect(updated.progress, 0.75);
+        expect(updated.receivedBytes, 750);
+        expect(updated.totalBytes, 1000);
+      });
+
+      test('copyWith with error map', () {
+        const original = InstallProgress(
+          modelId: 'test-model',
+          version: '1.0.0',
+          phase: InstallPhase.downloading,
+          requestId: 'req-1',
+        );
+        final updated = original.copyWith(
+          phase: InstallPhase.failed,
+          error: {'code': 'NETWORK_ERROR', 'message': 'Connection timed out'},
+        );
+        expect(updated.phase, InstallPhase.failed);
+        expect(updated.error, isNotNull);
+        expect(updated.error!['code'], 'NETWORK_ERROR');
+      });
     });
   });
 

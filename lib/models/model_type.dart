@@ -62,8 +62,9 @@ extension ModelTypeExtension on ModelType {
   }
 
   static ModelType fromString(String value) {
+    final lower = value.toLowerCase();
     return ModelType.values.firstWhere(
-      (e) => e.name == value,
+      (e) => e.name == lower,
       orElse: () => ModelType.custom,
     );
   }

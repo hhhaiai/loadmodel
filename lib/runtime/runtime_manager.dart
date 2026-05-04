@@ -14,11 +14,11 @@ import 'embedding_runtime.dart';
 class RuntimeManager {
   static RuntimeManager? _instance;
 
-  late final LLMRuntime llm;
-  late final OCRRuntime ocr;
-  late final TTSRuntime tts;
-  late final STTRuntime stt;
-  late final EmbeddingRuntime embedding;
+  late LLMRuntime? llm;
+  late OCRRuntime? ocr;
+  late TTSRuntime? tts;
+  late STTRuntime? stt;
+  late EmbeddingRuntime? embedding;
 
   bool _initialized = false;
 
@@ -37,7 +37,8 @@ class RuntimeManager {
     STTRuntime? customSTT,
     EmbeddingRuntime? customEmbedding,
   }) async {
-    if (_initialized) {
+    // If already initialized with fields set, skip
+    if (_initialized && llm != null) {
       logger.warning('RuntimeManager already initialized');
       return;
     }
@@ -124,36 +125,42 @@ class RuntimeManager {
     logger.info('Disposing RuntimeManager...');
 
     try {
-      if (llm.isLoaded) await llm.unloadModel();
+      if (llm?.isLoaded == true) await llm!.unloadModel();
     } catch (e) {
       logger.warning('Error unloading LLM: $e');
     }
 
     try {
-      if (ocr.isLoaded) await ocr.unloadModel();
+      if (ocr?.isLoaded == true) await ocr!.unloadModel();
     } catch (e) {
       logger.warning('Error unloading OCR: $e');
     }
 
     try {
-      if (tts.isLoaded) await tts.unloadModel();
+      if (tts?.isLoaded == true) await tts!.unloadModel();
     } catch (e) {
       logger.warning('Error unloading TTS: $e');
     }
 
     try {
-      if (stt.isLoaded) await stt.unloadModel();
+      if (stt?.isLoaded == true) await stt!.unloadModel();
     } catch (e) {
       logger.warning('Error unloading STT: $e');
     }
 
     try {
-      if (embedding.isLoaded) await embedding.unloadModel();
+      if (embedding?.isLoaded == true) await embedding!.unloadModel();
     } catch (e) {
       logger.warning('Error unloading Embedding: $e');
     }
 
     _initialized = false;
+    // Reset fields so init() can be called again
+    llm = null;
+    ocr = null;
+    tts = null;
+    stt = null;
+    embedding = null;
     logger.info('RuntimeManager disposed');
   }
 

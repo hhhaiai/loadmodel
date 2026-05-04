@@ -165,8 +165,37 @@ class MockEmbeddingRuntime implements EmbeddingRuntime {
   }
 }
 
+class _NotLoadedEmbeddingRuntime implements EmbeddingRuntime {
+  bool unloadCalled = false;
+
+  @override
+  bool get isLoaded => false;
+
+  @override
+  Future<void> loadModel(EmbeddingConfig config) async {}
+
+  @override
+  Future<void> unloadModel() async {
+    unloadCalled = true;
+  }
+
+  @override
+  Future<EmbeddingResult> getEmbedding(String text) async =>
+      const EmbeddingResult(embedding: [0.0], dimension: 1);
+}
+
 void main() {
   group('RuntimeManager', () {
+    setUp(() async {
+      // Reset RuntimeManager state before each test
+      await RuntimeManager.instance.dispose();
+    });
+
+    tearDown(() async {
+      // Clean up after each test
+      await RuntimeManager.instance.dispose();
+    });
+
     test('singleton returns same instance', () {
       final instance1 = RuntimeManager.instance;
       final instance2 = RuntimeManager.instance;
@@ -176,6 +205,200 @@ void main() {
     test('instance exists', () {
       final manager = RuntimeManager.instance;
       expect(manager, isA<RuntimeManager>());
+    });
+
+    group('stub runtimes', () {
+      late RuntimeManager manager;
+
+      setUp(() async {
+        await RuntimeManager.instance.dispose();
+        // Init without custom runtimes to get stub implementations
+        await RuntimeManager.instance.init();
+        manager = RuntimeManager.instance;
+      });
+
+      tearDown(() async {
+        await RuntimeManager.instance.dispose();
+      });
+
+      group('_LLMRuntimeStub', () {
+        test('isLoaded returns false', () {
+          expect(manager.llm!.isLoaded, false);
+        });
+
+        test('loadModel throws UnimplementedError', () async {
+          await expectLater(
+            manager.llm!.loadModel(const LLMConfig(modelPath: '/test', contextLength: 2048)),
+            throwsA(isA<UnimplementedError>()),
+          );
+        });
+
+        test('unloadModel completes without error', () async {
+          await expectLater(manager.llm!.unloadModel(), completes);
+        });
+
+        test('complete throws UnimplementedError', () async {
+          await expectLater(
+            manager.llm!.complete('test'),
+            throwsA(isA<UnimplementedError>()),
+          );
+        });
+
+        test('completeStream throws UnimplementedError', () async {
+          await expectLater(
+            manager.llm!.completeStream('test').first,
+            throwsA(isA<UnimplementedError>()),
+          );
+        });
+
+        test('chat throws UnimplementedError', () async {
+          await expectLater(
+            manager.llm!.chat([ChatMessage.user('test')]),
+            throwsA(isA<UnimplementedError>()),
+          );
+        });
+
+        test('chatStream throws UnimplementedError', () async {
+          await expectLater(
+            manager.llm!.chatStream([ChatMessage.user('test')]).first,
+            throwsA(isA<UnimplementedError>()),
+          );
+        });
+      });
+
+      group('_OCRRuntimeStub', () {
+        test('isLoaded returns false', () {
+          expect(manager.ocr!.isLoaded, false);
+        });
+
+        test('loadModel throws UnimplementedError', () async {
+          await expectLater(
+            manager.ocr!.loadModel(const OCRConfig(modelPath: '/test')),
+            throwsA(isA<UnimplementedError>()),
+          );
+        });
+
+        test('unloadModel completes without error', () async {
+          await expectLater(manager.ocr!.unloadModel(), completes);
+        });
+
+        test('recognize throws UnimplementedError', () async {
+          await expectLater(
+            manager.ocr!.recognize('/test/image.png'),
+            throwsA(isA<UnimplementedError>()),
+          );
+        });
+
+        test('recognizeBytes throws UnimplementedError', () async {
+          await expectLater(
+            manager.ocr!.recognizeBytes(Uint8List(0)),
+            throwsA(isA<UnimplementedError>()),
+          );
+        });
+      });
+
+      group('_TTSRuntimeStub', () {
+        test('isLoaded returns false', () {
+          expect(manager.tts!.isLoaded, false);
+        });
+
+        test('loadModel throws UnimplementedError', () async {
+          await expectLater(
+            manager.tts!.loadModel(const TTSConfig(modelPath: '/test')),
+            throwsA(isA<UnimplementedError>()),
+          );
+        });
+
+        test('unloadModel completes without error', () async {
+          await expectLater(manager.tts!.unloadModel(), completes);
+        });
+
+        test('synthesize throws UnimplementedError', () async {
+          await expectLater(
+            manager.tts!.synthesize('hello'),
+            throwsA(isA<UnimplementedError>()),
+          );
+        });
+
+        test('synthesizeBytes throws UnimplementedError', () async {
+          await expectLater(
+            manager.tts!.synthesizeBytes('hello'),
+            throwsA(isA<UnimplementedError>()),
+          );
+        });
+
+        test('getAvailableVoices returns empty list', () async {
+          final voices = await manager.tts!.getAvailableVoices();
+          expect(voices, isEmpty);
+        });
+      });
+
+      group('_STTRuntimeStub', () {
+        test('isLoaded returns false', () {
+          expect(manager.stt!.isLoaded, false);
+        });
+
+        test('loadModel throws UnimplementedError', () async {
+          await expectLater(
+            manager.stt!.loadModel(const STTConfig(modelPath: '/test')),
+            throwsA(isA<UnimplementedError>()),
+          );
+        });
+
+        test('unloadModel completes without error', () async {
+          await expectLater(manager.stt!.unloadModel(), completes);
+        });
+
+        test('recognize throws UnimplementedError', () async {
+          await expectLater(
+            manager.stt!.recognize('/test/audio.wav'),
+            throwsA(isA<UnimplementedError>()),
+          );
+        });
+
+        test('recognizeBytes throws UnimplementedError', () async {
+          await expectLater(
+            manager.stt!.recognizeBytes(Uint8List(0)),
+            throwsA(isA<UnimplementedError>()),
+          );
+        });
+
+        test('recognizeStream throws UnimplementedError', () async {
+          await expectLater(
+            manager.stt!.recognizeStream(Stream.value(Uint8List(0))).first,
+            throwsA(isA<UnimplementedError>()),
+          );
+        });
+
+        test('getSupportedLanguages returns empty list', () async {
+          final languages = await manager.stt!.getSupportedLanguages();
+          expect(languages, isEmpty);
+        });
+      });
+
+      group('_EmbeddingRuntimeStub', () {
+        test('isLoaded returns false', () {
+          expect(manager.embedding!.isLoaded, false);
+        });
+
+        test('loadModel throws UnimplementedError', () async {
+          await expectLater(
+            manager.embedding!.loadModel(const EmbeddingConfig(modelPath: '/test')),
+            throwsA(isA<UnimplementedError>()),
+          );
+        });
+
+        test('unloadModel completes without error', () async {
+          await expectLater(manager.embedding!.unloadModel(), completes);
+        });
+
+        test('getEmbedding throws UnimplementedError', () async {
+          await expectLater(
+            manager.embedding!.getEmbedding('test'),
+            throwsA(isA<UnimplementedError>()),
+          );
+        });
+      });
     });
 
     test('init with custom runtimes works', () async {
@@ -233,6 +456,60 @@ void main() {
 
       // Should not throw
       await expectLater(manager.dispose(), completes);
+    });
+
+    test('dispose unloads loaded runtimes and resets initialized flag', () async {
+      final manager = RuntimeManager.instance;
+
+      // Init with loaded runtimes that track unload calls
+      final trackingLLM = _LoadedTrackingLLMRuntime();
+      final trackingOCR = _LoadedTrackingOCRRuntime();
+      final trackingTTS = _LoadedTrackingTTSRuntime();
+      final trackingSTT = _LoadedTrackingSTTRuntime();
+      final trackingEmbedding = _LoadedTrackingEmbeddingRuntime();
+
+      await manager.init(
+        customLLM: trackingLLM,
+        customOCR: trackingOCR,
+        customTTS: trackingTTS,
+        customSTT: trackingSTT,
+        customEmbedding: trackingEmbedding,
+      );
+
+      await manager.dispose();
+
+      expect(trackingLLM.unloadCalled, true);
+      expect(trackingOCR.unloadCalled, true);
+      expect(trackingTTS.unloadCalled, true);
+      expect(trackingSTT.unloadCalled, true);
+      expect(trackingEmbedding.unloadCalled, true);
+    });
+
+    test('dispose skips unload when runtime isLoaded is false', () async {
+      final manager = RuntimeManager.instance;
+
+      // Init with not-loaded runtimes
+      final notLoadedLLM = _NotLoadedLLMRuntime();
+      final notLoadedOCR = _NotLoadedOCRRuntime();
+      final notLoadedTTS = _NotLoadedTTSRuntime();
+      final notLoadedSTT = _NotLoadedSTTRuntime();
+      final notLoadedEmbedding = _NotLoadedEmbeddingRuntime();
+
+      await manager.init(
+        customLLM: notLoadedLLM,
+        customOCR: notLoadedOCR,
+        customTTS: notLoadedTTS,
+        customSTT: notLoadedSTT,
+        customEmbedding: notLoadedEmbedding,
+      );
+
+      await manager.dispose();
+
+      expect(notLoadedLLM.unloadCalled, false);
+      expect(notLoadedOCR.unloadCalled, false);
+      expect(notLoadedTTS.unloadCalled, false);
+      expect(notLoadedSTT.unloadCalled, false);
+      expect(notLoadedEmbedding.unloadCalled, false);
     });
   });
 }
@@ -311,4 +588,237 @@ class _ThrowingEmbeddingRuntime implements EmbeddingRuntime {
 
   @override
   Future<EmbeddingResult> getEmbedding(String text) async => throw Exception();
+}
+
+// Tracking runtimes that record whether unload was called
+class _LoadedTrackingLLMRuntime implements LLMRuntime {
+  bool unloadCalled = false;
+
+  @override
+  LLMModelInfo? get loadedModel => const LLMModelInfo(name: 'test', path: '/test');
+
+  @override
+  bool get isLoaded => true;
+
+  @override
+  Future<void> loadModel(LLMConfig config) async {}
+
+  @override
+  Future<void> unloadModel() async {
+    unloadCalled = true;
+  }
+
+  @override
+  Future<String> complete(String prompt, {GenerationConfig? config}) async => '';
+
+  @override
+  Stream<String> completeStream(String prompt, {GenerationConfig? config}) async* {}
+
+  @override
+  Future<String> chat(List<ChatMessage> messages, {GenerationConfig? config}) async => '';
+
+  @override
+  Stream<String> chatStream(List<ChatMessage> messages, {GenerationConfig? config}) async* {}
+}
+
+class _LoadedTrackingOCRRuntime implements OCRRuntime {
+  bool unloadCalled = false;
+
+  @override
+  bool get isLoaded => true;
+
+  @override
+  Future<void> loadModel(OCRConfig config) async {}
+
+  @override
+  Future<void> unloadModel() async {
+    unloadCalled = true;
+  }
+
+  @override
+  Future<OCRResult> recognize(String imagePath, {OCRParams? params}) async =>
+      const OCRResult(text: '', blocks: []);
+
+  @override
+  Future<OCRResult> recognizeBytes(Uint8List imageBytes, {OCRParams? params}) async =>
+      const OCRResult(text: '', blocks: []);
+}
+
+class _LoadedTrackingTTSRuntime implements TTSRuntime {
+  bool unloadCalled = false;
+
+  @override
+  bool get isLoaded => true;
+
+  @override
+  Future<void> loadModel(TTSConfig config) async {}
+
+  @override
+  Future<void> unloadModel() async {
+    unloadCalled = true;
+  }
+
+  @override
+  Future<String> synthesize(String text, {TTSParams? params, String? outputPath}) async => '';
+
+  @override
+  Future<Uint8List> synthesizeBytes(String text, {TTSParams? params}) async => Uint8List(0);
+
+  @override
+  Future<List<String>> getAvailableVoices() async => [];
+}
+
+class _LoadedTrackingSTTRuntime implements STTRuntime {
+  bool unloadCalled = false;
+
+  @override
+  bool get isLoaded => true;
+
+  @override
+  Future<void> loadModel(STTConfig config) async {}
+
+  @override
+  Future<void> unloadModel() async {
+    unloadCalled = true;
+  }
+
+  @override
+  Future<STTResult> recognize(String audioPath, {STTParams? params}) async =>
+      const STTResult(text: '');
+
+  @override
+  Future<STTResult> recognizeBytes(Uint8List audioBytes, {STTParams? params}) async =>
+      const STTResult(text: '');
+
+  @override
+  Stream<STTResult> recognizeStream(Stream<Uint8List> audioStream, {STTParams? params}) async* {}
+
+  @override
+  Future<List<String>> getSupportedLanguages() async => [];
+}
+
+class _LoadedTrackingEmbeddingRuntime implements EmbeddingRuntime {
+  bool unloadCalled = false;
+
+  @override
+  bool get isLoaded => true;
+
+  @override
+  Future<void> loadModel(EmbeddingConfig config) async {}
+
+  @override
+  Future<void> unloadModel() async {
+    unloadCalled = true;
+  }
+
+  @override
+  Future<EmbeddingResult> getEmbedding(String text) async =>
+      const EmbeddingResult(embedding: [0.0], dimension: 1);
+}
+
+// Not-loaded runtimes that should skip unload in dispose
+class _NotLoadedLLMRuntime implements LLMRuntime {
+  bool unloadCalled = false;
+
+  @override
+  LLMModelInfo? get loadedModel => null;
+
+  @override
+  bool get isLoaded => false;
+
+  @override
+  Future<void> loadModel(LLMConfig config) async {}
+
+  @override
+  Future<void> unloadModel() async {
+    unloadCalled = true;
+  }
+
+  @override
+  Future<String> complete(String prompt, {GenerationConfig? config}) async => '';
+
+  @override
+  Stream<String> completeStream(String prompt, {GenerationConfig? config}) async* {}
+
+  @override
+  Future<String> chat(List<ChatMessage> messages, {GenerationConfig? config}) async => '';
+
+  @override
+  Stream<String> chatStream(List<ChatMessage> messages, {GenerationConfig? config}) async* {}
+}
+
+class _NotLoadedOCRRuntime implements OCRRuntime {
+  bool unloadCalled = false;
+
+  @override
+  bool get isLoaded => false;
+
+  @override
+  Future<void> loadModel(OCRConfig config) async {}
+
+  @override
+  Future<void> unloadModel() async {
+    unloadCalled = true;
+  }
+
+  @override
+  Future<OCRResult> recognize(String imagePath, {OCRParams? params}) async =>
+      const OCRResult(text: '', blocks: []);
+
+  @override
+  Future<OCRResult> recognizeBytes(Uint8List imageBytes, {OCRParams? params}) async =>
+      const OCRResult(text: '', blocks: []);
+}
+
+class _NotLoadedTTSRuntime implements TTSRuntime {
+  bool unloadCalled = false;
+
+  @override
+  bool get isLoaded => false;
+
+  @override
+  Future<void> loadModel(TTSConfig config) async {}
+
+  @override
+  Future<void> unloadModel() async {
+    unloadCalled = true;
+  }
+
+  @override
+  Future<String> synthesize(String text, {TTSParams? params, String? outputPath}) async => '';
+
+  @override
+  Future<Uint8List> synthesizeBytes(String text, {TTSParams? params}) async => Uint8List(0);
+
+  @override
+  Future<List<String>> getAvailableVoices() async => [];
+}
+
+class _NotLoadedSTTRuntime implements STTRuntime {
+  bool unloadCalled = false;
+
+  @override
+  bool get isLoaded => false;
+
+  @override
+  Future<void> loadModel(STTConfig config) async {}
+
+  @override
+  Future<void> unloadModel() async {
+    unloadCalled = true;
+  }
+
+  @override
+  Future<STTResult> recognize(String audioPath, {STTParams? params}) async =>
+      const STTResult(text: '');
+
+  @override
+  Future<STTResult> recognizeBytes(Uint8List audioBytes, {STTParams? params}) async =>
+      const STTResult(text: '');
+
+  @override
+  Stream<STTResult> recognizeStream(Stream<Uint8List> audioStream, {STTParams? params}) async* {}
+
+  @override
+  Future<List<String>> getSupportedLanguages() async => [];
 }
