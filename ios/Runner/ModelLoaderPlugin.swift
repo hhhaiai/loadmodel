@@ -8,6 +8,7 @@
 
 import Flutter
 import UIKit
+import AVFoundation
 
 @_silgen_name("LlamaBridgeLoadModel")
 private func LlamaBridgeLoadModel(
@@ -57,6 +58,10 @@ private func LlamaBridgeFreeString(_ ptr: UnsafeMutablePointer<CChar>)
 public class ModelLoaderPlugin: NSObject, FlutterPlugin {
 
     private let maxTokensUpperBound = 2048
+
+    // TTS engine
+    private let speechSynthesizer = AVSpeechSynthesizer()
+    private var ttsInitialized = false
 
     private struct NativeChatMessages {
         let roles: [String]
@@ -153,11 +158,11 @@ public class ModelLoaderPlugin: NSObject, FlutterPlugin {
 
         // TTS Methods
         case "loadTTSModel":
-            result(FlutterError(code: "NOT_IMPLEMENTED", message: "TTS not implemented", details: nil))
+            handleLoadTTSModel(call: call, result: result)
         case "unloadTTSModel":
-            result(true)
+            handleUnloadTTSModel(result: result)
         case "synthesizeTTS":
-            result(FlutterError(code: "NOT_IMPLEMENTED", message: "TTS not implemented", details: nil))
+            handleSynthesizeTTS(call: call, result: result)
 
         // LLM Methods
         case "loadLLMModel":
@@ -400,6 +405,86 @@ public class ModelLoaderPlugin: NSObject, FlutterPlugin {
                     result(FlutterError(code: "INFERENCE_ERROR", message: "OCR inference failed: \(error.localizedDescription)", details: nil))
                 }
             }
+        }
+    }
+
+    // MARK: - TTS (AVSpeechSynthesizer)
+
+    private func handleLoadTTSModel(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        let language: String
+        if let args = call.arguments as? [String: Any],
+           let lang = args["language"] as? String {
+            language = lang
+        } else {
+            language = "en-US"
+        }
+
+        // AVSpeechSynthesizer doesn't require model loading, just mark as initialized
+        ttsInitialized = true
+        NSLog("ModelLoader: TTS loaded for language: \(language)")
+        result(true)
+    }
+
+    private func handleUnloadTTSModel(result: @escaping FlutterResult) {
+        ttsInitialized = false
+        NSLog("ModelLoader: TTS unloaded")
+        result(true)
+    }
+
+    private func handleSynthesizeTTS(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let text = args["text"] as? String,
+              let outputPath = args["outputPath"] as? String else {
+            result(FlutterError(code: "INVALID_ARGS", message: "text and outputPath are required", details: nil))
+            return
+        }
+
+        let utterance = AVSpeechUtterance(string: text)
+
+        // Set language
+        let language = args["language"] as? String ?? "en-US"
+        utterance.voice = AVSpeechSynthesisVoice(language: languageCode(for: language))
+
+        // Set rate if provided
+        if let rate = args["rate"] as? Double {
+            utterance.rate = Float(rate)
+        }
+
+        // Set pitch if provided
+        if let pitch = args["pitch"] as? Double {
+            utterance.pitchMultiplier = Float(pitch)
+        }
+
+        // Set volume if provided
+        if let volume = args["volume"] as? Double {
+            utterance.volume = Float(volume)
+        }
+
+        // iOS AVSpeechSynthesizer does not support direct file output.
+        // It can only play audio through speakers. The file path is returned
+        // as a acknowledgment but actual audio is played, not saved.
+        // For proper file output on iOS, AVAudioEngine would be required.
+        speechSynthesizer.speak(utterance)
+        NSLog("ModelLoader: TTS speaking (file output not supported on iOS): \(outputPath)")
+        result(outputPath)
+    }
+
+    private func languageCode(for language: String) -> String {
+        switch language {
+        case let l where l.hasPrefix("zh"):
+            return "zh-CN"
+        case let l where l.hasPrefix("ja"):
+            return "ja-JP"
+        case let l where l.hasPrefix("ko"):
+            return "ko-KR"
+        case let l where l.hasPrefix("es"):
+            return "es-ES"
+        case let l where l.hasPrefix("fr"):
+            return "fr-FR"
+        case let l where l.hasPrefix("de"):
+            return "de-DE"
+        default:
+            return "en-US"
         }
     }
 

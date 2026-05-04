@@ -100,8 +100,37 @@ class ConversationTimeline extends StatelessWidget {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('OCR 置信度: ${block.confidence.toStringAsFixed(2)}'),
-              SelectableText(block.text),
+              if (block.imageBytes != null) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.memory(
+                    block.imageBytes!,
+                    height: 150,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      height: 150,
+                      alignment: Alignment.center,
+                      child: Text(
+                        '图片加载失败',
+                        style: TextStyle(color: Colors.grey.shade500),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              SelectableText(
+                block.text,
+                style: const TextStyle(fontSize: 15),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '置信度: ${(block.confidence * 100).toStringAsFixed(1)}%',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 12,
+                ),
+              ),
             ],
           );
         } else if (block is MetricBlock) {

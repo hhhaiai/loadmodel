@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 /// Content block types for structured conversation display.
 ///
 /// Provides polymorphic content rendering beyond plain text,
@@ -38,7 +40,12 @@ class EmbeddingBlock extends ContentBlock {
 class OCRBlockDisplay extends ContentBlock {
   final String text;
   final double confidence;
-  const OCRBlockDisplay({required this.text, required this.confidence});
+  final Uint8List? imageBytes;
+  const OCRBlockDisplay({
+    required this.text,
+    required this.confidence,
+    this.imageBytes,
+  });
 }
 
 /// Key-value metric display (e.g., "耗时: 120ms").

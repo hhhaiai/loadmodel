@@ -28,8 +28,8 @@ class ONNXRuntimes {
   /// Embedding 运行时 ONNX 实现
   static final EmbeddingRuntime embedding = _EmbeddingRuntimeImpl();
 
-  /// TTS 运行时 (暂不支持 ONNX)
-  static final TTSRuntime tts = _TTSRuntimeUnimplemented();
+  /// TTS 运行时 (Android TextToSpeech / iOS AVSpeechSynthesizer)
+  static final TTSRuntime tts = _TTSRuntimeImpl();
 
   /// LLM 运行时 (暂不支持 ONNX)
   static final LLMRuntime llm = _LLMRuntimeUnimplemented();
@@ -338,18 +338,42 @@ class _EmbeddingRuntimeImpl implements EmbeddingRuntime {
   }
 }
 
-/// TTS 未实现
-class _TTSRuntimeUnimplemented implements TTSRuntime {
+/// TTS Runtime Platform 实现
+class _TTSRuntimeImpl implements TTSRuntime {
+  bool _loaded = false;
+
   @override
-  bool get isLoaded => false;
+  bool get isLoaded => _loaded;
 
   @override
   Future<void> loadModel(TTSConfig config) async {
-    throw UnimplementedError('TTS via ONNX not implemented');
+    try {
+      final loaded = await ONNXRuntimes.channel.invokeMethod('loadTTSModel', {
+        'language': config.language ?? 'en-US',
+      });
+      if (loaded == false) {
+        throw PlatformException(
+          code: 'LOAD_ERROR',
+          message: 'Native runtime failed to load TTS model',
+        );
+      }
+      _loaded = true;
+      logger.info('TTS model loaded');
+    } on PlatformException catch (e) {
+      logger.error('Failed to load TTS model', e);
+      rethrow;
+    }
   }
 
   @override
-  Future<void> unloadModel() async {}
+  Future<void> unloadModel() async {
+    try {
+      await ONNXRuntimes.channel.invokeMethod('unloadTTSModel');
+      _loaded = false;
+    } on PlatformException catch (e) {
+      logger.error('Failed to unload TTS model', e);
+    }
+  }
 
   @override
   Future<String> synthesize(
@@ -357,16 +381,61 @@ class _TTSRuntimeUnimplemented implements TTSRuntime {
     TTSParams? params,
     String? outputPath,
   }) async {
-    throw UnimplementedError('TTS not implemented');
+    if (outputPath == null || outputPath.isEmpty) {
+      throw PlatformException(
+        code: 'INVALID_ARGS',
+        message: 'outputPath is required for TTS synthesis',
+      );
+    }
+
+    try {
+      final result = await ONNXRuntimes.channel.invokeMethod('synthesizeTTS', {
+        'text': text,
+        'outputPath': outputPath,
+        if (params != null) ...{
+          if (params.speed != null) 'speed': params.speed,
+          if (params.pitch != null) 'pitch': params.pitch,
+          if (params.volume != null) 'volume': params.volume,
+          if (params.voice != null) 'voice': params.voice,
+        },
+      });
+
+      if (result == null) {
+        throw PlatformException(
+          code: 'SYNTHESIS_ERROR',
+          message: 'TTS synthesis returned null',
+        );
+      }
+
+      return result.toString();
+    } on PlatformException catch (e) {
+      logger.error('TTS synthesis failed', e);
+      rethrow;
+    }
   }
 
   @override
   Future<Uint8List> synthesizeBytes(String text, {TTSParams? params}) async {
-    throw UnimplementedError('TTS not implemented');
+    // Generate to temp file first, then read bytes
+    final tempDir = Directory.systemTemp;
+    final tempFile = File('${tempDir.path}/tts_${DateTime.now().millisecondsSinceEpoch}.wav');
+    try {
+      await synthesize(text, params: params, outputPath: tempFile.path);
+      final bytes = await tempFile.readAsBytes();
+      return bytes;
+    } finally {
+      if (await tempFile.exists()) {
+        await tempFile.delete();
+      }
+    }
   }
 
   @override
-  Future<List<String>> getAvailableVoices() async => [];
+  Future<List<String>> getAvailableVoices() async {
+    // Android TTS doesn't provide a direct API to list voices
+    // Return common voice identifiers
+    return ['en-US', 'zh-CN', 'ja-JP', 'ko-KR', 'es-ES', 'fr-FR', 'de-DE'];
+  }
 }
 
 /// LLM 未实现

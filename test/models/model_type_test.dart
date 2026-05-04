@@ -48,7 +48,14 @@ void main() {
     test('fromString returns custom for unknown values', () {
       expect(ModelTypeExtension.fromString('unknown'), equals(ModelType.custom));
       expect(ModelTypeExtension.fromString(''), equals(ModelType.custom));
-      expect(ModelTypeExtension.fromString('LLM'), equals(ModelType.custom)); // case sensitive
+    });
+
+    test('fromString is case insensitive', () {
+      expect(ModelTypeExtension.fromString('LLM'), equals(ModelType.llm));
+      expect(ModelTypeExtension.fromString('Embedding'), equals(ModelType.embedding));
+      expect(ModelTypeExtension.fromString('OCR'), equals(ModelType.ocr));
+      expect(ModelTypeExtension.fromString('TTS'), equals(ModelType.tts));
+      expect(ModelTypeExtension.fromString('STT'), equals(ModelType.stt));
     });
   });
 }
