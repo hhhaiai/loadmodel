@@ -25,7 +25,20 @@
 - `integration_test/`: 集成测试
 - `android/`, `ios/`, `macos/`: 原生桥接与平台工程
 
-## 本地开发
+## 快速开始
+
+```bash
+git clone https://github.com/hhhaiai/loadmodel.git
+cd loadmodel
+make prepare        # 一键恢复模型 + llama.cpp + 安装依赖
+make test           # 运行测试
+make build-apk      # 构建 Android APK
+make build-ios      # 构建 iOS (无签名)
+```
+
+运行 `make` 查看所有可用命令。
+
+### 手动方式（不用 Makefile）
 
 ```bash
 ./restore_models.sh
@@ -55,7 +68,9 @@ flutter build ios --release --no-codesign
 - 重新打包源码目录：`./pack_llama_cpp.sh`
 - `third_party/llama.cpp/` 已加入 `.gitignore`，本地解压后不会被误提交
 
-如果你是新克隆仓库，先执行 `./restore_models.sh` 和 `./restore_llama_cpp.sh`，再跑 Flutter 的测试和构建。
+如果你是新克隆仓库，先执行 `./restore_models.sh` 和 `./restore_llama_cpp.sh`，再跑 Flutter 的测试和构建。也可以直接运行 `./prepare.sh` 或 `make prepare` 一键完成所有步骤。
+
+恢复脚本支持增量检查：如果目标目录已存在，会自动跳过解压。使用 `--force` 参数强制重新解压。
 
 ## 已验证的能力
 
