@@ -24,10 +24,7 @@ class _ConversationShellState extends State<ConversationShell> {
 
   void _handleSend() {
     final input = _inputController.text;
-    if (input.trim().isEmpty) {
-      _controller.send(input);
-      return;
-    }
+    if (input.trim().isEmpty) return;
 
     _inputController.clear();
     _controller.send(input);
