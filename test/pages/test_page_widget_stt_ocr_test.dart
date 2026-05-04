@@ -241,18 +241,20 @@ void main() {
       expect(find.byKey(const Key('ocr_gallery_button')), findsOneWidget);
       expect(find.text('拍照识别'), findsOneWidget);
       expect(find.text('选择图片'), findsOneWidget);
-      expect(find.text('请拍照或选择图片'), findsOneWidget);
+      // Default test image is auto-loaded, so placeholder may not appear
     });
 
-    testWidgets('OCR shows no-image error when tapped without image', (
+    testWidgets('OCR runs inference with default test image', (
       tester,
     ) async {
       await pumpTestPage(tester);
       await selectTestType(tester, 'ocr');
+      // Default test image is auto-loaded, so tapping "识别" should run inference
       await tester.tap(find.byKey(const Key('test_send_button')));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('请先拍照或选择图片'), findsOneWidget);
+      // Should show OCR result (not a no-image error)
+      expect(find.textContaining('OCR 识别完成'), findsOneWidget);
     });
 
     testWidgets('OCR shows model-not-loaded error', (tester) async {
@@ -276,8 +278,7 @@ void main() {
       await pumpTestPage(tester);
       await selectTestType(tester, 'ocr');
 
-      // Verify the preview container exists
-      expect(find.text('请拍照或选择图片'), findsOneWidget);
+      // Default test image is auto-loaded, preview shows the image
       // Verify the send button says "识别"
       expect(find.text('识别'), findsOneWidget);
     });
@@ -297,11 +298,17 @@ void main() {
 
         await pumpTestPage(tester);
         await selectTestType(tester, 'ocr');
-        // Without image, shows no-image error
+        // Default test image is auto-loaded, so inference runs and throws
         await tester.tap(find.byKey(const Key('test_send_button')));
         await tester.pumpAndSettle();
 
-        expect(find.textContaining('请先拍照或选择图片'), findsOneWidget);
+        expect(
+          find.textContaining(
+            '[${ModelLoaderErrorCode.INFERENCE_FAILED.code}]',
+          ),
+          findsOneWidget,
+        );
+        expect(find.textContaining('OCR 推理失败'), findsOneWidget);
       },
     );
   });

@@ -27,6 +27,27 @@ class _TestPageState extends State<TestPage> {
   final _imagePicker = ImagePicker();
 
   @override
+  void initState() {
+    super.initState();
+    // Load default test image for OCR if initially selected
+    if (_selectedType == 'ocr') {
+      _loadDefaultOcrImage();
+    }
+  }
+
+  Future<void> _loadDefaultOcrImage() async {
+    try {
+      final data = await rootBundle.load('assets/models/ocr/test_english.png');
+      if (!mounted) return;
+      setState(() {
+        _selectedImageBytes = data.buffer.asUint8List();
+      });
+    } catch (e) {
+      logger.warning('Failed to load default OCR test image', e);
+    }
+  }
+
+  @override
   void dispose() {
     _inputController.dispose();
     super.dispose();
@@ -68,6 +89,25 @@ class _TestPageState extends State<TestPage> {
     }
   }
 
+  Widget _buildTestImageChip(String label, String assetName) {
+    return ActionChip(
+      label: Text(label, style: const TextStyle(fontSize: 12)),
+      onPressed: _isRunning
+          ? null
+          : () async {
+              try {
+                final data = await rootBundle.load('assets/models/ocr/$assetName');
+                if (!mounted) return;
+                setState(() {
+                  _selectedImageBytes = data.buffer.asUint8List();
+                });
+              } catch (e) {
+                logger.warning('Failed to load test image: $assetName', e);
+              }
+            },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -104,6 +144,9 @@ class _TestPageState extends State<TestPage> {
                   _selectedType = v!;
                   if (v != 'ocr') _selectedImageBytes = null;
                 });
+                if (v == 'ocr' && _selectedImageBytes == null) {
+                  _loadDefaultOcrImage();
+                }
               },
             ),
             const SizedBox(height: 16),
@@ -157,6 +200,20 @@ class _TestPageState extends State<TestPage> {
                           style: TextStyle(color: Colors.grey),
                         ),
                       ),
+              ),
+              const SizedBox(height: 8),
+              // 测试图片快速选择
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  _buildTestImageChip('English', 'test_english.png'),
+                  _buildTestImageChip('Model', 'test_english_v2.png'),
+                  _buildTestImageChip('ASCII', 'test_ascii.png'),
+                  _buildTestImageChip('Numbers', 'test_numbers.png'),
+                  _buildTestImageChip('Word', 'test_word.png'),
+                  _buildTestImageChip('Mixed', 'test_mixed.png'),
+                ],
               ),
               const SizedBox(height: 16),
             ],

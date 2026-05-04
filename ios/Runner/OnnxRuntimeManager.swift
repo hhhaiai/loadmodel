@@ -180,8 +180,11 @@ class OnnxRuntimeManager {
             throw OnnxRuntimeError.imageResizeFailed
         }
 
+        // Detect and fix inverted images (white text on dark background)
+        let processedImage = detectAndFixInversion(resizedImage)
+
         // Convert to NCHW RGB float buffer normalized to [-1, 1]
-        let floatBuffer = try imageToRgbFloatBuffer(resizedImage)
+        let floatBuffer = try imageToRgbFloatBuffer(processedImage)
 
         // Create input tensor [1, 3, 48, 320]
         let inputData = NSMutableData(bytes: floatBuffer, length: floatBuffer.count * MemoryLayout<Float>.size)
@@ -780,7 +783,6 @@ class OnnxRuntimeManager {
         let outputData = try outputValue.tensorData()
 
         // Output shape is typically [1, seq_len, num_classes]
-        // We need to determine the dimensions from the tensor
         let typeAndShapeInfo = try outputValue.tensorTypeAndShapeInfo()
         let shape = typeAndShapeInfo.shape
         guard shape.count >= 2 else {
@@ -820,14 +822,13 @@ class OnnxRuntimeManager {
                 }
             }
 
-            // Compute softmax for confidence (numerical stability: subtract max)
-            var expSum: Double = 0.0
-            for c in 0..<numClasses {
-                expSum += exp(Double(floatBuffer[offset + c]) - Double(maxVal))
+            // Model output is already softmax probabilities (last node is Softmax).
+            // maxVal IS the confidence — no extra softmax needed.
+            // Only count non-blank timesteps.
+            if maxIdx != 0 {
+                totalConf += Double(maxVal)
+                charCount += 1
             }
-            let maxProb = 1.0 / expSum  // exp(maxVal - maxVal) / expSum
-            totalConf += maxProb
-            charCount += 1
             lastIdx = maxIdx
         }
 
@@ -844,6 +845,77 @@ class OnnxRuntimeManager {
         let resized = UIGraphicsGetImageFromCurrentImageContext()
         UIGraphicsEndImageContext()
         return resized
+    }
+
+    /// Detect if image is inverted (white text on dark background) and fix it.
+    /// PaddleOCR expects dark text on white background.
+    private func detectAndFixInversion(_ image: UIImage) -> UIImage {
+        guard let cgImage = image.cgImage else { return image }
+
+        let width = cgImage.width
+        let height = cgImage.height
+        let bytesPerPixel = 4
+        let bytesPerRow = bytesPerPixel * width
+        let totalBytes = bytesPerRow * height
+
+        var pixelData = [UInt8](repeating: 0, count: totalBytes)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+
+        pixelData.withUnsafeMutableBytes { rawBuffer in
+            guard let context = CGContext(
+                data: rawBuffer.baseAddress,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: bytesPerRow,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return }
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+
+        // Calculate average brightness
+        var totalBrightness: Int = 0
+        let pixelCount = width * height
+        for i in 0..<pixelCount {
+            let offset = i * bytesPerPixel
+            let r = Int(pixelData[offset])
+            let g = Int(pixelData[offset + 1])
+            let b = Int(pixelData[offset + 2])
+            totalBrightness += (r + g + b) / 3
+        }
+        let avgBrightness = totalBrightness / pixelCount
+
+        // If average brightness < 128, image is likely inverted
+        if avgBrightness < 128 {
+            print("OnnxRuntimeManager: OCR: detected inverted image (avg brightness=\(avgBrightness)), inverting...")
+            for i in 0..<pixelCount {
+                let offset = i * bytesPerPixel
+                pixelData[offset] = UInt8(255 - Int(pixelData[offset]))       // R
+                pixelData[offset + 1] = UInt8(255 - Int(pixelData[offset + 1])) // G
+                pixelData[offset + 2] = UInt8(255 - Int(pixelData[offset + 2])) // B
+                // Alpha stays unchanged
+            }
+
+            // Create inverted image
+            let provider = CGDataProvider(data: Data(pixelData) as CFData)!
+            if let invertedCGImage = CGImage(
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bitsPerPixel: 32,
+                bytesPerRow: bytesPerRow,
+                space: colorSpace,
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                provider: provider,
+                decode: nil,
+                shouldInterpolate: false,
+                intent: .defaultIntent
+            ) {
+                return UIImage(cgImage: invertedCGImage)
+            }
+        }
+        return image
     }
 
     /// Convert UIImage to NCHW RGB float buffer normalized to [-1, 1]
