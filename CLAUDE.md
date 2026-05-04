@@ -1142,30 +1142,34 @@ UI 设计原则：
 
 #### C. 提交前大文件整理
 
+**模型资产和 llama.cpp 源码不再提交到 git**，统一采用分片归档本地缓存模式。
+
 当 `assets/models/` 发生变化时：
 
 1. 重新打包模型目录：
    - `./pack_models.sh`
-2. 提交内容应是：
-   - `assets/models_archive/` 分片
-   - `assets/models_archive/*.sha256`
-   - 不应提交解压后的 `assets/models/`
+   - 生成分片到 `assets/models_archive/`
+   - **分片文件在本地，不提交到 git**
+2. 将分片文件复制/上传到共享存储（可选）：
+   - `assets/models_archive/` 目录下的所有 `.part*` 文件
+   - 或上传到 GitHub Releases / Google Drive 等共享位置
+3. 开发者在构建前运行：
+   - `./restore_models.sh` 恢复模型
 
 当 `third_party/llama.cpp/` 发生变化时：
 
 1. 重新打包源码目录：
    - `./pack_llama_cpp.sh`
-2. 提交内容应是：
-   - `third_party/llama_cpp_archive/` 分片
-   - `third_party/llama_cpp_archive/*.sha256`
-   - 不应提交解压后的 `third_party/llama.cpp/`
+   - **分片文件在本地，不提交到 git**
 
 #### D. 当前忽略规则的意图
 
 以下目录默认视为**本地工作副本**，不应直接提交：
 
-- `assets/models/`
-- `third_party/llama.cpp/`
+- `assets/models/` - 从分片恢复，不跟踪
+- `assets/models_archive/` - 分片归档在本地，不提交
+- `third_party/llama.cpp/` - 从分片恢复，不跟踪
+- `third_party/llama_cpp_archive/` - 分片归档在本地，不提交
 - `models/`
 
 说明：
