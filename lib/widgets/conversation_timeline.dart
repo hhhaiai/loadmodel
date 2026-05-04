@@ -125,12 +125,78 @@ class ConversationTimeline extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
+                '文字识别置信度: ${(block.confidence * 100).toStringAsFixed(1)}%',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          );
+        } else if (block is ImageCaptionBlock) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (block.imageBytes != null) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.memory(
+                    block.imageBytes!,
+                    height: 150,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      height: 150,
+                      alignment: Alignment.center,
+                      child: Text(
+                        '图片加载失败',
+                        style: TextStyle(color: Colors.grey.shade500),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              const Text(
+                '图片描述:',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 4),
+              SelectableText(
+                block.caption,
+                style: const TextStyle(fontSize: 15),
+              ),
+              const SizedBox(height: 4),
+              Text(
                 '置信度: ${(block.confidence * 100).toStringAsFixed(1)}%',
                 style: TextStyle(
                   color: Colors.grey.shade600,
                   fontSize: 12,
                 ),
               ),
+              if (block.candidates != null && block.candidates!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  '其他候选:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                    color: Colors.grey,
+                  ),
+                ),
+                ...block.candidates!.map((c) => Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        '${c.text} (${(c.confidence * 100).toStringAsFixed(1)}%)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    )),
+              ],
             ],
           );
         } else if (block is MetricBlock) {

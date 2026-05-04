@@ -48,6 +48,30 @@ class OCRBlockDisplay extends ContentBlock {
   });
 }
 
+/// Image caption result.
+class ImageCaptionBlock extends ContentBlock {
+  final String caption;
+  final double confidence;
+  final Uint8List? imageBytes;
+  final List<CaptionDisplayCandidate>? candidates;
+  const ImageCaptionBlock({
+    required this.caption,
+    required this.confidence,
+    this.imageBytes,
+    this.candidates,
+  });
+}
+
+/// Caption candidate for display.
+class CaptionDisplayCandidate {
+  final String text;
+  final double confidence;
+  const CaptionDisplayCandidate({
+    required this.text,
+    required this.confidence,
+  });
+}
+
 /// Key-value metric display (e.g., "耗时: 120ms").
 class MetricBlock extends ContentBlock {
   final String label;

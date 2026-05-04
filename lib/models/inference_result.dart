@@ -191,6 +191,70 @@ class STTSegment {
   }
 }
 
+/// 图片描述结果
+class ImageCaptionResult {
+  /// 描述文本
+  final String caption;
+
+  /// 置信度
+  final double confidence;
+
+  /// 候选描述列表 (如果 numCandidates > 1)
+  final List<CaptionCandidate> candidates;
+
+  const ImageCaptionResult({
+    required this.caption,
+    this.confidence = 1.0,
+    this.candidates = const [],
+  });
+
+  factory ImageCaptionResult.fromJson(Map<String, dynamic> json) {
+    final candidatesList = (json['candidates'] as List<dynamic>?)
+            ?.map((e) => CaptionCandidate.fromJson(e))
+            .toList() ??
+        [];
+
+    return ImageCaptionResult(
+      caption: json['caption'] ?? '',
+      confidence: (json['confidence'] ?? 1.0).toDouble(),
+      candidates: candidatesList,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'caption': caption,
+      'confidence': confidence,
+      'candidates': candidates.map((e) => e.toJson()).toList(),
+    };
+  }
+}
+
+/// 描述候选
+class CaptionCandidate {
+  final String text;
+  final double confidence;
+
+  const CaptionCandidate({
+    required this.text,
+    required this.confidence,
+  });
+
+  factory CaptionCandidate.fromJson(Map<String, dynamic> json) {
+    return CaptionCandidate(
+      text: json['text'] ?? '',
+      confidence: (json['confidence'] ?? 0.0).toDouble(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'text': text,
+      'confidence': confidence,
+    };
+  }
+}
+
 /// TTS 合成结果
 class TTSResult {
   /// 音频文件路径

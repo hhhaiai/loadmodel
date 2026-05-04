@@ -164,6 +164,14 @@ public class ModelLoaderPlugin: NSObject, FlutterPlugin {
         case "synthesizeTTS":
             handleSynthesizeTTS(call: call, result: result)
 
+        // Image Captioning Methods
+        case "loadImageCaptionModel":
+            handleLoadImageCaptionModel(call: call, result: result)
+        case "unloadImageCaptionModel":
+            handleUnloadImageCaptionModel(result: result)
+        case "captionImage":
+            handleCaptionImage(call: call, result: result)
+
         // LLM Methods
         case "loadLLMModel":
             handleLoadLLMModel(call: call, result: result)
@@ -467,6 +475,52 @@ public class ModelLoaderPlugin: NSObject, FlutterPlugin {
         speechSynthesizer.speak(utterance)
         NSLog("ModelLoader: TTS speaking (file output not supported on iOS): \(outputPath)")
         result(outputPath)
+    }
+
+    // MARK: - Image Captioning
+
+    private func handleLoadImageCaptionModel(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let modelPath = args["modelPath"] as? String else {
+            result(FlutterError(code: "INVALID_ARGS", message: "modelPath is required", details: nil))
+            return
+        }
+
+        do {
+            try OnnxRuntimeManager.shared.loadImageCaptionModel(modelPath: modelPath)
+            NSLog("ModelLoader: Image Captioning model loaded")
+            result(true)
+        } catch {
+            NSLog("ModelLoader: Failed to load Image Captioning model: \(error)")
+            result(FlutterError(code: "LOAD_ERROR", message: "Failed to load Image Captioning model: \(error.localizedDescription)", details: nil))
+        }
+    }
+
+    private func handleUnloadImageCaptionModel(result: @escaping FlutterResult) {
+        OnnxRuntimeManager.shared.unloadImageCaptionModel()
+        NSLog("ModelLoader: Image Captioning model unloaded")
+        result(true)
+    }
+
+    private func handleCaptionImage(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let imageData = args["imageData"] as? FlutterStandardTypedData else {
+            result(FlutterError(code: "INVALID_ARGS", message: "imageData is required", details: nil))
+            return
+        }
+
+        do {
+            let data = imageData.data
+            let captionResult = try OnnxRuntimeManager.shared.captionImage(imageData: data)
+            result([
+                "caption": captionResult.caption,
+                "confidence": captionResult.confidence,
+                "candidates": captionResult.candidates.map { ["text": $0.text, "confidence": $0.confidence] }
+            ])
+        } catch {
+            NSLog("ModelLoader: Image caption failed: \(error)")
+            result(FlutterError(code: "CAPTION_ERROR", message: "Image caption failed: \(error.localizedDescription)", details: nil))
+        }
     }
 
     private func languageCode(for language: String) -> String {
