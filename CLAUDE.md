@@ -1070,6 +1070,19 @@ UI 设计原则：
       - `flutter build apk --debug`：通过
       - `flutter build ios --release --no-codesign`：通过
 
+25. **架构违规修复 + 空输入 bug 修复 + 死代码清理（2026-05-04）**
+    - `lib/core/conversation_controller.dart` 原本 import `lib/pages/test_page.dart`（core→pages 架构违规）
+    - 新增 `lib/utils/status_messages.dart`：提取 `buildTestModelNotLoadedStatus` / `buildTestInferenceFailedStatus` / `buildTestRuntimeUnavailableStatus` 三个共享函数
+    - `lib/pages/test_page.dart`：移除三个函数定义，改为 import `status_messages.dart`
+    - `lib/core/conversation_controller.dart`：import 改为 `../utils/status_messages.dart`
+    - `lib/pages/conversation_shell.dart`：修复空输入仍发送到 LLM 的 bug（`input.trim().isEmpty` 时不再调用 `_controller.send(input)`）
+    - `lib/runtime/llm_runtime.dart`：移除从未使用或测试的 `LLMResult` 类（34 行）
+    - 验证结果：
+      - `flutter analyze`：通过（No issues）
+      - `flutter test`：通过（740/740）
+      - `flutter build apk --debug`：通过
+      - `flutter build ios --release --no-codesign`：通过
+
 ### 5.8 当前工程使用方法（2026-03-22）
 
 以下流程是目录扁平化后的**标准使用方式**，新会话默认按这个顺序执行：
