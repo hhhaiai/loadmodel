@@ -404,7 +404,7 @@ UI 设计原则：
 
 - `flutter analyze`：通过（No issues）
 - `flutter test`：通过（`00:43 +740: All tests passed!`，从 554 增至 740）
-- 最近一次 `flutter test --coverage` 实测：`72.9%`（`2465/3380`，2026-05-04）
+- 最近一次 `flutter test --coverage` 实测：`73.3%`（`2501/3410`，2026-05-04）
 - `flutter build apk --debug`：通过（`✓ Built build/app/outputs/flutter-apk/app-debug.apk`）
 - `flutter build ios --release --no-codesign`：通过（`✓ Built build/ios/iphoneos/Runner.app`）
 - 2026-05-03 本轮代码变更：
@@ -692,7 +692,7 @@ UI 设计原则：
 
 1. 工程当前可以稳定完成：
    - `flutter analyze`
-   - `flutter test`（808/808 全绿，覆盖率 72.9%）
+   - `flutter test`（808/808 全绿，覆盖率 73.3%）
    - `flutter build apk --debug`
    - `flutter build ios --release --no-codesign`
 2. Android 真机在 2026-03-22 再次完成”安装 -> 清数据 -> 冷启动 -> 状态页渲染 -> 对话页打开”复验。
@@ -755,7 +755,7 @@ UI 设计原则：
 | iOS 原生插件 | 部分实现 | 本地 LLM bridge 可用；ONNX Runtime 已集成（Embedding/OCR/STT 真实推理可用）；TTS 已实现（AVSpeechSynthesizer 播放音频） |
 | Android 原生插件 | 部分实现 | 本地 LLM JNI bridge 可用（增加 android log 日志）；OCR 推理已实现（CTC decode + 字符字典，待真实模型验证）；STT 推理已实现（mel spectrogram + encoder + decoder + vocab decoding，待真机 E2E）；TTS 已实现（TextToSpeech 文件输出） |
 | UI（加载/对话/测试/状态/设置） | 部分实现 | 设置持久化已实现；对话页与测试页已转向消息流展现；全局导航控制器已建立；统一 UI 协议仍未完成 |
-| 测试体系 | 部分实现 | 单测基线 738 个用例全绿，覆盖率 72.0%（2026-05-04）|
+| 测试体系 | 部分实现 | 单测基线 808 个用例全绿，覆盖率 73.3%（2026-05-04）|
 | 多模态能力总线 | 规划中 | 仍需统一文本/视觉/语音/向量/Agent 能力入口 |
 | 插件化能力注册表 | 规划中 | 仍需定义模型插件、能力插件、工具插件协议 |
 | ChatGPT 风格统一 UI 壳层 | 部分实现 | `ConversationShell`、`TestPage`、`ModelLoadPage` 已采用对话式承载；`StatusPage`/`SettingsPage`/`ModelsPage` 为仪表盘/表单/目录页面，不需要对话式化 |
@@ -1094,6 +1094,18 @@ UI 设计原则：
       - `flutter build apk --debug`：通过
       - `flutter build ios --release --no-codesign`：通过
 
+27. **OCR 推理改进：置信度计算修正 + 图像反转检测（2026-05-04）**
+    - Android/iOS 置信度计算修正：直接使用模型输出的 softmax 概率，无需额外计算
+    - Android/iOS 图像反转检测：自动识别白底黑字/黑底白字并反转（PaddleOCR 期望黑字白底）
+    - 测试页面增强：OCR 模式自动加载默认测试图片，新增快速选择测试图片 chips
+    - 更新 OCR 测试图片（7 个 PNG 文件）和字符字典（`ppocr_keys_v1.txt`）
+    - 测试覆盖率提升至 73.3%（2501/3410）
+    - 验证结果：
+      - `flutter analyze`：通过（No issues）
+      - `flutter test`：通过（808/808）
+      - `flutter build apk --debug`：通过
+      - `flutter build ios --release --no-codesign`：通过
+
 ### 5.8 当前工程使用方法（2026-03-22）
 
 以下流程是目录扁平化后的**标准使用方式**，新会话默认按这个顺序执行：
@@ -1244,7 +1256,7 @@ UI 设计原则：
 
 3. ~~处理 TTS 能力策略~~ ✅ 已实现（双端已集成，Android: TextToSpeech，iOS: AVSpeechSynthesizer）
 
-4. ~~覆盖率已达标 72.0%~~ ✅ 已达成（2465/3380 = 72.9%，2026-05-04）
+4. ~~覆盖率已达标 72.0%~~ ✅ 已达成（2501/3410 = 73.3%，2026-05-04）
 
 5. ~~继续统一 Chat UI 壳层~~ ✅ 已完成（对话页、测试页、加载页已统一到 ConversationTimeline + ContentBlock；状态页/设置页/模型页为仪表盘/表单/目录，不需要对话式化）
 
@@ -1274,7 +1286,7 @@ UI 设计原则：
 ## 11. 验收标准（DoD）与当前对照
 
 1. `flutter test` 全绿，且具备有效业务测试
-   - 当前：`已满足`（`808/808`，覆盖率 72.9%）
+   - 当前：`已满足`（`808/808`，覆盖率 73.3%）
 
 2. `flutter analyze` 无 warning
    - 当前：`已满足`
@@ -1309,7 +1321,7 @@ UI 设计原则：
 
 1. STT 仍未达到真实推理可用强度；OCR 双端已有真实推理代码，待真实模型端到端验证。
 2. TTS 仍未实现，若继续暴露入口会持续制造错误预期。
-3. 覆盖率 72.0%，已超过 70% 目标，但复杂回归仍有风险。
+3. 覆盖率 73.3%，已超过 70% 目标，但复杂回归仍有风险。
 4. 多模态结果尚未统一消息协议，UI 仍有碎片化风险。
 5. ModelManager 若不补齐一致性链路，后续大模型安装/升级风险较高。
 6. 多模型格式目标范围较大，若缺插件协议会持续挤压核心层边界。
