@@ -219,7 +219,7 @@ void main() {
           ],
         ),
       ]);
-      expect(find.text('置信度: 95.0%'), findsOneWidget);
+      expect(find.text('文字识别置信度: 95.0%'), findsOneWidget);
       expect(find.text('识别结果'), findsOneWidget);
     });
 
