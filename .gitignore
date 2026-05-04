@@ -40,6 +40,8 @@ assets/models_archive/*.tar.gz.part*
 assets/models_archive/*.sha256
 third_party/llama.cpp/**
 third_party/llama_cpp_archive/*.tar.gz
+third_party/llama_cpp_archive/*.tar.gz.part*
+third_party/llama_cpp_archive/*.sha256
 /models/
 
 # Symbolication related
