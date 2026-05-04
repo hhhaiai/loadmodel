@@ -6,6 +6,7 @@ import '../runtime/stt_runtime.dart';
 import '../runtime/tts_runtime.dart';
 import '../runtime/llm_runtime.dart';
 import '../runtime/embedding_runtime.dart';
+import '../runtime/image_caption_runtime.dart';
 import '../utils/logger.dart';
 
 /// Platform Channel 名称
@@ -29,6 +30,9 @@ class ONNXRuntimes {
 
   /// TTS 运行时 (Android TextToSpeech / iOS AVSpeechSynthesizer)
   static final TTSRuntime tts = _TTSRuntimeImpl();
+
+  /// Image Captioning 运行时 ONNX 实现
+  static final ImageCaptionRuntime imageCaption = _ImageCaptionRuntimeImpl();
 
   /// LLM 运行时 (暂不支持 ONNX)
   static final LLMRuntime llm = _LLMRuntimeUnimplemented();
@@ -482,5 +486,89 @@ class _LLMRuntimeUnimplemented implements LLMRuntime {
     GenerationConfig? config,
   }) async* {
     throw UnimplementedError('LLM not implemented');
+  }
+}
+
+/// Image Captioning Runtime ONNX 实现
+class _ImageCaptionRuntimeImpl implements ImageCaptionRuntime {
+  bool _loaded = false;
+
+  @override
+  bool get isLoaded => _loaded;
+
+  @override
+  Future<void> loadModel(ImageCaptionConfig config) async {
+    if (!_isValidOnnxLocalModelPath(config.modelPath)) {
+      throw PlatformException(
+        code: 'INVALID_ARGS',
+        message: 'modelPath must be a local .onnx file path',
+      );
+    }
+
+    try {
+      final loaded = await ONNXRuntimes.channel.invokeMethod('loadImageCaptionModel', {
+        'modelPath': config.modelPath,
+      });
+      if (loaded == false) {
+        throw PlatformException(
+          code: 'LOAD_ERROR',
+          message: 'Native runtime failed to load Image Captioning model',
+        );
+      }
+      _loaded = true;
+      logger.info('Image Captioning model loaded: ${config.modelPath}');
+    } on PlatformException catch (e) {
+      logger.error('Failed to load Image Captioning model', e);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> unloadModel() async {
+    try {
+      await ONNXRuntimes.channel.invokeMethod('unloadImageCaptionModel');
+      _loaded = false;
+      logger.info('Image Captioning model unloaded');
+    } on PlatformException catch (e) {
+      logger.error('Failed to unload Image Captioning model', e);
+    }
+  }
+
+  @override
+  Future<ImageCaptionResult> caption(
+    String imagePath, {
+    ImageCaptionParams? params,
+  }) async {
+    try {
+      final bytes = await File(imagePath).readAsBytes();
+      return await captionBytes(bytes, params: params);
+    } catch (e) {
+      logger.error('Image caption failed', e);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<ImageCaptionResult> captionBytes(
+    Uint8List imageBytes, {
+    ImageCaptionParams? params,
+  }) async {
+    try {
+      final result = await ONNXRuntimes.channel.invokeMethod('captionImage', {
+        'imageData': imageBytes,
+        if (params?.maxLength != null) 'max_length': params!.maxLength,
+        if (params?.temperature != null) 'temperature': params!.temperature,
+        if (params?.numCandidates != null) 'num_candidates': params!.numCandidates,
+      });
+
+      if (result is Map) {
+        return ImageCaptionResult.fromJson(Map<String, dynamic>.from(result));
+      }
+
+      throw Exception('Invalid Image Captioning result');
+    } on PlatformException catch (e) {
+      logger.error('Image caption failed', e);
+      rethrow;
+    }
   }
 }

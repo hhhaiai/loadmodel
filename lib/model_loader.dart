@@ -7,11 +7,13 @@ import 'runtime/ocr_runtime.dart';
 import 'runtime/tts_runtime.dart';
 import 'runtime/stt_runtime.dart';
 import 'runtime/embedding_runtime.dart';
+import 'runtime/image_caption_runtime.dart';
 import 'runtime/llm_runtime_stub.dart';
 import 'runtime/ocr_runtime_stub.dart';
 import 'runtime/tts_runtime_stub.dart';
 import 'runtime/stt_runtime_stub.dart';
 import 'runtime/embedding_runtime_stub.dart';
+import 'runtime/image_caption_runtime_stub.dart';
 import 'runtime/llm_runtime_mobile.dart';
 import 'runtime/llm_runtime_llama.cpp.dart';
 import 'runtime/onnx_runtime_flutter.dart';
@@ -82,6 +84,7 @@ class ModelLoader {
   late TTSRuntime _tts;
   late STTRuntime _stt;
   late EmbeddingRuntime _embedding;
+  late ImageCaptionRuntime _imageCaption;
 
   // 平台信息
   late final PlatformInfo _platform;
@@ -157,6 +160,9 @@ class ModelLoader {
   /// Embedding 运行时
   EmbeddingRuntime get embedding => _embedding;
 
+  /// Image Captioning 运行时
+  ImageCaptionRuntime get imageCaption => _imageCaption;
+
   /// 初始化 SDK
   static Future<ModelLoader> initialize({
     ModelLoaderConfig? config,
@@ -214,6 +220,7 @@ class ModelLoader {
     _tts = TTSRuntimeStub();
     _stt = STTRuntimeStub();
     _embedding = EmbeddingRuntimeStub();
+    _imageCaption = ImageCaptionRuntimeStub();
 
     // 如果开启自动选择，尝试加载平台特定的运行时
     if (_config.autoSelectRuntime) {
@@ -244,8 +251,9 @@ class ModelLoader {
       _ocr = ONNXRuntimes.ocr;
       _stt = ONNXRuntimes.stt;
       _embedding = ONNXRuntimes.embedding;
+      _imageCaption = ONNXRuntimes.imageCaption;
 
-      logger.info('Mobile runtimes: ONNX wired (OCR, STT, Embedding)');
+      logger.info('Mobile runtimes: ONNX wired (OCR, STT, Embedding, ImageCaption)');
     } catch (e) {
       logger.warning('ONNX runtime not available: $e');
     }
@@ -310,6 +318,12 @@ class ModelLoader {
   void setEmbeddingRuntime(EmbeddingRuntime runtime) {
     _embedding = runtime;
     logger.info('Embedding runtime replaced');
+  }
+
+  /// 替换 Image Captioning 运行时实现
+  void setImageCaptionRuntime(ImageCaptionRuntime runtime) {
+    _imageCaption = runtime;
+    logger.info('Image Captioning runtime replaced');
   }
 
   ModelManifestItem? _buildSelectionManifestModel({
@@ -542,6 +556,10 @@ class ModelLoader {
 
     try {
       if (_embedding.isLoaded) await _embedding.unloadModel();
+    } catch (_) {}
+
+    try {
+      if (_imageCaption.isLoaded) await _imageCaption.unloadModel();
     } catch (_) {}
 
     _initialized = false;

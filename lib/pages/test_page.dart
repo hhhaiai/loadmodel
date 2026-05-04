@@ -138,20 +138,21 @@ class _TestPageState extends State<TestPage> {
                 ),
                 DropdownMenuItem(value: 'stt', child: Text('🎤 STT')),
                 DropdownMenuItem(value: 'ocr', child: Text('📷 OCR')),
+                DropdownMenuItem(value: 'caption', child: Text('🖼️ Caption')),
               ],
               onChanged: (v) {
                 setState(() {
                   _selectedType = v!;
-                  if (v != 'ocr') _selectedImageBytes = null;
+                  if (v != 'ocr' && v != 'caption') _selectedImageBytes = null;
                 });
-                if (v == 'ocr' && _selectedImageBytes == null) {
+                if ((v == 'ocr' || v == 'caption') && _selectedImageBytes == null) {
                   _loadDefaultOcrImage();
                 }
               },
             ),
             const SizedBox(height: 16),
-            // OCR 图片选择区域
-            if (_selectedType == 'ocr') ...[
+            // OCR / Caption 图片选择区域
+            if (_selectedType == 'ocr' || _selectedType == 'caption') ...[
               Row(
                 children: [
                   Expanded(
@@ -220,7 +221,7 @@ class _TestPageState extends State<TestPage> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (_selectedType != 'ocr')
+                if (_selectedType != 'ocr' && _selectedType != 'caption')
                   Expanded(
                     child: TextField(
                       key: const Key('test_input_field'),
@@ -245,7 +246,7 @@ class _TestPageState extends State<TestPage> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.send),
-                    label: Text(_isRunning ? '...' : '识别'),
+                    label: Text(_isRunning ? '...' : (_selectedType == 'ocr' ? '识别' : '描述')),
                   ),
                 ),
               ],
@@ -405,6 +406,59 @@ class _TestPageState extends State<TestPage> {
                   text: ocrResult.text,
                   confidence: ocrResult.averageConfidence,
                   imageBytes: _selectedImageBytes,
+                ),
+              ],
+            ),
+          );
+          break;
+
+        case 'caption':
+          _appendEntry(
+            const ConversationEntry(
+              role: ConversationEntryRole.user,
+              text: '🖼️ 图片描述',
+            ),
+          );
+          if (!ml.imageCaption.isLoaded) {
+            _appendEntry(
+              ConversationEntry(
+                role: ConversationEntryRole.error,
+                text: buildTestModelNotLoadedStatus(taskLabel: 'Image Caption'),
+              ),
+            );
+            return;
+          }
+          if (_selectedImageBytes == null) {
+            _appendEntry(
+              ConversationEntry(
+                role: ConversationEntryRole.error,
+                text: buildTestInferenceFailedStatus(
+                  taskLabel: 'Image Caption',
+                  reason: '请先拍照或选择图片',
+                ),
+              ),
+            );
+            return;
+          }
+          final captionResult = await ml.imageCaption.captionBytes(_selectedImageBytes!);
+          _appendEntry(
+            ConversationEntry(
+              role: ConversationEntryRole.assistant,
+              text: '',
+              contentBlocks: [
+                const TextBlock('🖼️ 图片描述完成'),
+                ImageCaptionBlock(
+                  caption: captionResult.caption,
+                  confidence: captionResult.confidence,
+                  imageBytes: _selectedImageBytes,
+                  candidates: captionResult.candidates.isEmpty
+                      ? null
+                      : captionResult.candidates
+                          .map((c) => CaptionDisplayCandidate(
+                                text: c.text,
+                                confidence: c.confidence,
+                              ))
+                          .toList(),
                 ),
               ],
             ),
