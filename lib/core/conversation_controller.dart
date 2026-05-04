@@ -4,7 +4,7 @@ import '../model_loader.dart';
 import '../models/conversation_entry.dart';
 import '../models/inference_event.dart';
 import '../models/inference_event_mapper.dart';
-import '../pages/test_page.dart';
+import '../utils/status_messages.dart';
 import '../runtime/llm_runtime.dart';
 
 class ConversationController extends ChangeNotifier {

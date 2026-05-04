@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:model_loader/models/model_loader_exception.dart';
-import 'package:model_loader/pages/test_page.dart';
+import 'package:model_loader/utils/status_messages.dart';
 
 void main() {
   group('TestPage status text builders', () {
