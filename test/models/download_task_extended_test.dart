@@ -157,6 +157,31 @@ void main() {
       expect(InstallPhase.values, contains(InstallPhase.extracting));
       expect(InstallPhase.values, contains(InstallPhase.verifying));
       expect(InstallPhase.values, contains(InstallPhase.ready));
+      expect(InstallPhase.values, contains(InstallPhase.failed));
+      expect(InstallPhase.values, contains(InstallPhase.cancelled));
+    });
+
+    test('isTerminal returns true for ready/failed/cancelled', () {
+      expect(InstallPhase.ready.isTerminal, isTrue);
+      expect(InstallPhase.failed.isTerminal, isTrue);
+      expect(InstallPhase.cancelled.isTerminal, isTrue);
+    });
+
+    test('isTerminal returns false for non-terminal phases', () {
+      expect(InstallPhase.idle.isTerminal, isFalse);
+      expect(InstallPhase.downloading.isTerminal, isFalse);
+      expect(InstallPhase.verifying.isTerminal, isFalse);
+      expect(InstallPhase.extracting.isTerminal, isFalse);
+    });
+
+    test('phase names are correct', () {
+      expect(InstallPhase.idle.name, equals('idle'));
+      expect(InstallPhase.downloading.name, equals('downloading'));
+      expect(InstallPhase.verifying.name, equals('verifying'));
+      expect(InstallPhase.extracting.name, equals('extracting'));
+      expect(InstallPhase.ready.name, equals('ready'));
+      expect(InstallPhase.failed.name, equals('failed'));
+      expect(InstallPhase.cancelled.name, equals('cancelled'));
     });
   });
 
@@ -186,6 +211,77 @@ void main() {
       expect(progress.progress, 0.5);
       expect(progress.receivedBytes, 500);
       expect(progress.totalBytes, 1000);
+    });
+
+    test('fromJson deserializes correctly', () {
+      final progress = InstallProgress.fromJson({
+        'modelId': 'model-1',
+        'version': '1.0.0',
+        'phase': 'downloading',
+        'receivedBytes': 500,
+        'totalBytes': 1000,
+        'progress': 0.5,
+        'requestId': 'req-1',
+        'error': null,
+      });
+      expect(progress.modelId, equals('model-1'));
+      expect(progress.version, equals('1.0.0'));
+      expect(progress.phase, equals(InstallPhase.downloading));
+      expect(progress.receivedBytes, equals(500));
+      expect(progress.totalBytes, equals(1000));
+      expect(progress.progress, equals(0.5));
+      expect(progress.requestId, equals('req-1'));
+      expect(progress.error, isNull);
+    });
+
+    test('fromJson handles missing fields with defaults', () {
+      final progress = InstallProgress.fromJson({});
+      expect(progress.modelId, equals(''));
+      expect(progress.version, equals('1.0.0'));
+      expect(progress.phase, equals(InstallPhase.idle));
+      expect(progress.receivedBytes, equals(0));
+      expect(progress.totalBytes, equals(0));
+      expect(progress.progress, equals(0.0));
+      expect(progress.requestId, equals(''));
+      expect(progress.error, isNull);
+    });
+
+    test('fromJson handles unknown phase', () {
+      final progress = InstallProgress.fromJson({'phase': 'unknown'});
+      expect(progress.phase, equals(InstallPhase.idle));
+    });
+
+    test('toJson serializes correctly', () {
+      const progress = InstallProgress(
+        modelId: 'model-1',
+        version: '1.0.0',
+        phase: InstallPhase.downloading,
+        receivedBytes: 500,
+        totalBytes: 1000,
+        progress: 0.5,
+        requestId: 'req-1',
+      );
+      final json = progress.toJson();
+      expect(json['modelId'], equals('model-1'));
+      expect(json['version'], equals('1.0.0'));
+      expect(json['phase'], equals('downloading'));
+      expect(json['receivedBytes'], equals(500));
+      expect(json['totalBytes'], equals(1000));
+      expect(json['progress'], equals(0.5));
+      expect(json['requestId'], equals('req-1'));
+      expect(json['error'], isNull);
+    });
+
+    test('toJson includes error when present', () {
+      const progress = InstallProgress(
+        modelId: 'model-1',
+        version: '1.0.0',
+        phase: InstallPhase.failed,
+        requestId: 'req-1',
+        error: {'message': 'download failed'},
+      );
+      final json = progress.toJson();
+      expect(json['error'], equals({'message': 'download failed'}));
     });
 
     group('copyWith', () {
@@ -280,6 +376,15 @@ void main() {
       expect(DownloadStatus.values, contains(DownloadStatus.failed));
       expect(DownloadStatus.values, contains(DownloadStatus.cancelled));
     });
+
+    test('displayName returns correct Chinese text', () {
+      expect(DownloadStatus.pending.displayName, equals('等待中'));
+      expect(DownloadStatus.downloading.displayName, equals('下载中'));
+      expect(DownloadStatus.paused.displayName, equals('已暂停'));
+      expect(DownloadStatus.completed.displayName, equals('已完成'));
+      expect(DownloadStatus.failed.displayName, equals('下载失败'));
+      expect(DownloadStatus.cancelled.displayName, equals('已取消'));
+    });
   });
 
   group('DownloadTask', () {
@@ -317,6 +422,91 @@ void main() {
       );
       task.status = DownloadStatus.downloading;
       expect(task.status, DownloadStatus.downloading);
+    });
+
+    test('cancel sets cancelled flag and status', () {
+      final task = DownloadTask(
+        id: 'task-1',
+        modelId: 'model-1',
+        modelName: 'Test Model',
+        savePath: '/tmp/model',
+      );
+      task.cancel();
+      expect(task.isCancelled, isTrue);
+      expect(task.status, equals(DownloadStatus.cancelled));
+    });
+
+    test('pause changes status from downloading to paused', () {
+      final task = DownloadTask(
+        id: 'task-1',
+        modelId: 'model-1',
+        modelName: 'Test Model',
+        savePath: '/tmp/model',
+        status: DownloadStatus.downloading,
+      );
+      task.pause();
+      expect(task.status, equals(DownloadStatus.paused));
+    });
+
+    test('pause does nothing if not downloading', () {
+      final task = DownloadTask(
+        id: 'task-1',
+        modelId: 'model-1',
+        modelName: 'Test Model',
+        savePath: '/tmp/model',
+        status: DownloadStatus.pending,
+      );
+      task.pause();
+      expect(task.status, equals(DownloadStatus.pending));
+    });
+
+    test('resume changes status from paused to downloading', () {
+      final task = DownloadTask(
+        id: 'task-1',
+        modelId: 'model-1',
+        modelName: 'Test Model',
+        savePath: '/tmp/model',
+        status: DownloadStatus.paused,
+      );
+      task.resume();
+      expect(task.status, equals(DownloadStatus.downloading));
+    });
+
+    test('resume does nothing if not paused', () {
+      final task = DownloadTask(
+        id: 'task-1',
+        modelId: 'model-1',
+        modelName: 'Test Model',
+        savePath: '/tmp/model',
+        status: DownloadStatus.pending,
+      );
+      task.resume();
+      expect(task.status, equals(DownloadStatus.pending));
+    });
+
+    test('createdAt defaults to now if not specified', () {
+      final before = DateTime.now();
+      final task = DownloadTask(
+        id: 'task-1',
+        modelId: 'model-1',
+        modelName: 'Test Model',
+        savePath: '/tmp/model',
+      );
+      final after = DateTime.now();
+      expect(task.createdAt.isAfter(before.subtract(const Duration(seconds: 1))), isTrue);
+      expect(task.createdAt.isBefore(after.add(const Duration(seconds: 1))), isTrue);
+    });
+
+    test('createdAt can be specified', () {
+      final specified = DateTime(2025, 1, 1);
+      final task = DownloadTask(
+        id: 'task-1',
+        modelId: 'model-1',
+        modelName: 'Test Model',
+        savePath: '/tmp/model',
+        createdAt: specified,
+      );
+      expect(task.createdAt, equals(specified));
     });
   });
 }
