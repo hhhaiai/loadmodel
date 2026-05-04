@@ -404,7 +404,7 @@ UI 设计原则：
 
 - `flutter analyze`：通过（No issues）
 - `flutter test`：通过（`00:43 +740: All tests passed!`，从 554 增至 740）
-- 最近一次 `flutter test --coverage` 实测：`72.0%`（`2356/3272`，2026-05-04）
+- 最近一次 `flutter test --coverage` 实测：`72.9%`（`2465/3380`，2026-05-04）
 - `flutter build apk --debug`：通过（`✓ Built build/app/outputs/flutter-apk/app-debug.apk`）
 - `flutter build ios --release --no-codesign`：通过（`✓ Built build/ios/iphoneos/Runner.app`）
 - 2026-05-03 本轮代码变更：
@@ -692,7 +692,7 @@ UI 设计原则：
 
 1. 工程当前可以稳定完成：
    - `flutter analyze`
-   - `flutter test`（740/740 全绿，覆盖率 72.0%）
+   - `flutter test`（808/808 全绿，覆盖率 72.9%）
    - `flutter build apk --debug`
    - `flutter build ios --release --no-codesign`
 2. Android 真机在 2026-03-22 再次完成”安装 -> 清数据 -> 冷启动 -> 状态页渲染 -> 对话页打开”复验。
@@ -721,11 +721,11 @@ UI 设计原则：
     - `OCRBlockDisplay` 新增 `imageBytes` 字段，结果中原图对照显示
     - Android CAMERA 权限 + iOS NSCameraUsageDescription/NSPhotoLibraryUsageDescription 已配置
     - 生产级审查通过：mounted 检查、10MB 限制、异常处理、Image.memory errorBuilder
-    - 测试 740/740 全绿
+    - 测试 808/808 全绿
 12. **ModelLoadPage 已统一到 ConversationTimeline + ContentBlock 协议**（2026-05-04）：
     - 加载结果从单一 `_status` 字符串改为 `List<ConversationEntry>` 结构化消息
     - 成功/错误/加载中分别使用 TextBlock/ErrorBlock/StatusBlock 展示
-    - 测试 740/740 全绿（无需修改即通过）
+    - 测试 808/808 全绿（无需修改即通过）
 
 当前**不能直接宣称**的事实：
 
@@ -1046,7 +1046,7 @@ UI 设计原则：
     - 测试从 738 增长到 740（+2）
     - 验证结果：
       - `flutter analyze`：通过（No issues）
-      - `flutter test`：通过（740/740）
+      - `flutter test`：通过（808/808）
       - `flutter build apk --debug`：通过
       - `flutter build ios --release --no-codesign`：通过
 
@@ -1066,7 +1066,7 @@ UI 设计原则：
     - 测试无需修改即通过（`find.textContaining(...)` 仍匹配 ErrorBlock 渲染的文本）
     - 验证结果：
       - `flutter analyze`：通过（No issues）
-      - `flutter test`：通过（740/740）
+      - `flutter test`：通过（808/808）
       - `flutter build apk --debug`：通过
       - `flutter build ios --release --no-codesign`：通过
 
@@ -1079,7 +1079,18 @@ UI 设计原则：
     - `lib/runtime/llm_runtime.dart`：移除从未使用或测试的 `LLMResult` 类（34 行）
     - 验证结果：
       - `flutter analyze`：通过（No issues）
-      - `flutter test`：通过（740/740）
+      - `flutter test`：通过（808/808）
+      - `flutter build apk --debug`：通过
+      - `flutter build ios --release --no-codesign`：通过
+
+26. **测试覆盖率提升至 72.9%（2026-05-04）**
+    - 新增 `test/core/asset_helper_test.dart`（34 tests）：覆盖 AssetHelper 的缓存、加载、批量加载、路径解析、清理等
+    - 扩展 `test/core/platform_utils_test.dart`（43 tests）：覆盖路径方法、平台检测、边界条件
+    - 测试从 808 增长到 808（从 740 增长到 808，+68 tests）
+    - 覆盖率从 71.7% 提升至 72.9%（2465/3380）
+    - 验证结果：
+      - `flutter analyze`：通过（No issues）
+      - `flutter test`：通过（808/808）
       - `flutter build apk --debug`：通过
       - `flutter build ios --release --no-codesign`：通过
 
@@ -1233,7 +1244,7 @@ UI 设计原则：
 
 3. ~~处理 TTS 能力策略~~ ✅ 已实现（双端已集成，Android: TextToSpeech，iOS: AVSpeechSynthesizer）
 
-4. ~~覆盖率已达标 72.0%~~ ✅ 已达成（2356/3272，2026-05-04）
+4. ~~覆盖率已达标 72.0%~~ ✅ 已达成（2465/3380 = 72.9%，2026-05-04）
 
 5. ~~继续统一 Chat UI 壳层~~ ✅ 已完成（对话页、测试页、加载页已统一到 ConversationTimeline + ContentBlock；状态页/设置页/模型页为仪表盘/表单/目录，不需要对话式化）
 
@@ -1263,7 +1274,7 @@ UI 设计原则：
 ## 11. 验收标准（DoD）与当前对照
 
 1. `flutter test` 全绿，且具备有效业务测试
-   - 当前：`已满足`（`740/740`，覆盖率 72.0%）
+   - 当前：`已满足`（`808/808`，覆盖率 72.9%）
 
 2. `flutter analyze` 无 warning
    - 当前：`已满足`
