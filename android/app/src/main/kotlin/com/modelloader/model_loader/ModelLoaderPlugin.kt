@@ -545,7 +545,11 @@ class ModelLoaderPlugin : FlutterPlugin, MethodCallHandler {
                 // createScaledBitmap returns the same object if dimensions match
                 val needsSeparateRecycle = scaledBitmap !== bitmap
 
-                val floatBuffer = bitmapToRgbFloatBuffer(scaledBitmap, mean = floatArrayOf(0.5f, 0.5f, 0.5f), std = floatArrayOf(0.5f, 0.5f, 0.5f))
+                // Detect inverted images (white text on dark background) and auto-invert
+                val processedBitmap = detectAndFixInversion(scaledBitmap)
+                val needsRecycleProcessed = processedBitmap !== scaledBitmap
+
+                val floatBuffer = bitmapToRgbFloatBuffer(processedBitmap, mean = floatArrayOf(0.5f, 0.5f, 0.5f), std = floatArrayOf(0.5f, 0.5f, 0.5f))
 
                 val inputName = session.inputNames.first()
                 val tensor = OnnxTensor.createTensor(env, floatBuffer, longArrayOf(1, 3, inputHeight.toLong(), inputWidth.toLong()))
@@ -554,39 +558,38 @@ class ModelLoaderPlugin : FlutterPlugin, MethodCallHandler {
                 val outputTensor = output.first().value
                 val outputArray = outputTensor.value as Array<Array<FloatArray>>
 
-                // Debug: log output shape and first few timesteps
-                android.util.Log.d("ModelLoader", "OCR output dims: batch=${outputArray.size}, seqLen=${outputArray[0].size}, vocab=${outputArray[0][0].size}")
-                for (t in 0 until minOf(10, outputArray[0].size)) {
-                    // Find top 5 values
-                    val top5 = mutableListOf<Pair<Int, Float>>()
-                    for (i in 0 until outputArray[0][t].size) {
-                        top5.add(Pair(i, outputArray[0][t][i]))
-                    }
-                    top5.sortByDescending { it.second }
-                    val top5str = top5.take(5).joinToString(" ") { "${it.first}=${String.format("%.2f", it.second)}" }
-                    android.util.Log.d("ModelLoader", "OCR timestep $t top5: $top5str")
-                }
+                android.util.Log.d("ModelLoader", "OCR output: seqLen=${outputArray[0].size}, vocab=${outputArray[0][0].size}")
 
                 val text = ctcGreedyDecode(outputArray[0])
 
-                // Compute average confidence from softmax probabilities
+                // Model output is already softmax probabilities (last node is Softmax).
+                // The max value per timestep IS the confidence — no extra softmax needed.
                 var totalConf = 0.0
                 var charCount = 0
-                for (row in outputArray[0]) {
-                    // Find max for numerical stability
-                    var maxVal = Float.MIN_VALUE
-                    for (v in row) { if (v > maxVal) maxVal = v }
-                    // Compute softmax
-                    var expSum = 0.0
-                    for (v in row) { expSum += exp((v - maxVal).toDouble()) }
-                    val maxProb = exp((maxVal - maxVal).toDouble()) / expSum  // = 1.0/expSum after shift
-                    totalConf += maxProb
+                for ((tIdx, row) in outputArray[0].withIndex()) {
+                    // Find argmax
+                    var maxIdx = 0
+                    var maxVal = row[0]
+                    for (i in 1 until row.size) {
+                        if (row[i] > maxVal) { maxVal = row[i]; maxIdx = i }
+                    }
+                    // Skip blank timesteps (index 0)
+                    if (maxIdx == 0) continue
+
+                    // maxVal is already the softmax probability of the predicted class
+                    totalConf += maxVal.toDouble()
                     charCount++
+
+                    if (tIdx < 5) {
+                        android.util.Log.d("ModelLoader", "OCR conf t=$tIdx idx=$maxIdx prob=${String.format("%.4f", maxVal)}")
+                    }
                 }
                 val confidence = if (charCount > 0) totalConf / charCount else 0.0
+                android.util.Log.d("ModelLoader", "OCR conf total=${String.format("%.4f", totalConf)} charCount=$charCount avg=${String.format("%.4f", confidence)}")
 
                 tensor.close()
                 output.close()
+                if (needsRecycleProcessed) processedBitmap.recycle()
                 if (needsSeparateRecycle) scaledBitmap.recycle()
                 bitmap.recycle()
 
@@ -602,6 +605,44 @@ class ModelLoaderPlugin : FlutterPlugin, MethodCallHandler {
                 }
             }
         }
+    }
+
+    /**
+     * Detect if image is inverted (white text on dark background).
+     * PaddleOCR expects dark text on white background.
+     * If average brightness is low, invert the image.
+     */
+    private fun detectAndFixInversion(bitmap: Bitmap): Bitmap {
+        val w = bitmap.width
+        val h = bitmap.height
+        val pixels = IntArray(w * h)
+        bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
+
+        var totalBrightness = 0L
+        for (pixel in pixels) {
+            val r = (pixel shr 16) and 0xFF
+            val g = (pixel shr 8) and 0xFF
+            val b = pixel and 0xFF
+            totalBrightness += (r + g + b) / 3
+        }
+        val avgBrightness = totalBrightness / pixels.size
+
+        // If average brightness < 128, image is likely inverted
+        if (avgBrightness < 128) {
+            android.util.Log.d("ModelLoader", "OCR: detected inverted image (avg brightness=$avgBrightness), inverting...")
+            val inverted = Bitmap.createBitmap(w, h, bitmap.config ?: Bitmap.Config.ARGB_8888)
+            for (i in pixels.indices) {
+                val pixel = pixels[i]
+                val a = (pixel shr 24) and 0xFF
+                val r = 255 - ((pixel shr 16) and 0xFF)
+                val g = 255 - ((pixel shr 8) and 0xFF)
+                val b = 255 - (pixel and 0xFF)
+                pixels[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
+            }
+            inverted.setPixels(pixels, 0, w, 0, 0, w, h)
+            return inverted
+        }
+        return bitmap
     }
 
     /**
@@ -622,17 +663,11 @@ class ModelLoaderPlugin : FlutterPlugin, MethodCallHandler {
 
         for (i in pixels.indices) {
             val pixel = pixels[i]
-            // Debug: log first pixel values
-            if (i == 0) {
-                android.util.Log.d("ModelLoader", "First pixel ARGB: ${Integer.toHexString(pixel)}")
-            }
             // RGB channel order - extracted from ARGB format
             rPlane[i] = (((pixel shr 16 and 0xFF) / 255.0f) - mean[0]) / std[0]
             gPlane[i] = (((pixel shr 8 and 0xFF) / 255.0f) - mean[1]) / std[1]
             bPlane[i] = (((pixel and 0xFF) / 255.0f) - mean[2]) / std[2]
         }
-        // Debug: log first normalized channel values
-        android.util.Log.d("ModelLoader", "Normalized R[0]=${rPlane[0]}, G[0]=${gPlane[0]}, B[0]=${bPlane[0]}")
 
         buffer.put(rPlane)
         buffer.put(gPlane)
