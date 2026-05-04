@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import '../models/inference_result.dart';
@@ -257,8 +256,8 @@ class _STTRuntimeImpl implements STTRuntime {
   Stream<STTResult> recognizeStream(
     Stream<Uint8List> audioStream, {
     STTParams? params,
-  }) {
-    throw UnimplementedError('Stream recognition not implemented');
+  }) async* {
+    yield* Stream.error(UnimplementedError('Stream recognition not implemented'));
   }
 
   @override

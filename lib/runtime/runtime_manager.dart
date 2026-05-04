@@ -102,17 +102,7 @@ class RuntimeManager {
     STTRuntime? customSTT,
     EmbeddingRuntime? customEmbedding,
   }) async {
-    // 桌面端优先使用 llama.cpp for LLM
-    // ONNX for Embedding/STT/OCR
-
-    // 尝试加载 llama.cpp
-    try {
-      // final llama = await _loadLlamaCpp();
-      // llm = customLLM ?? llama;
-    } catch (e) {
-      logger.warning('llama.cpp not available, using stub LLM');
-    }
-
+    // 桌面端使用 stub 运行时（llama.cpp 集成通过 ModelLoader._initDesktopRuntimes 处理）
     llm = customLLM ?? _createStubLLM();
     ocr = customOCR ?? _createStubOCR();
     tts = customTTS ?? _createStubTTS();
